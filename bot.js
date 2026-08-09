@@ -13,11 +13,13 @@ app.use(express.json());
 
 const SITE_URL = 'https://getflix-phi.vercel.app/';
 
+// NOVAS FONTES DE PROXIES (5 Fontes robustas)
 const PROXY_API_URLS = [
-    'https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all',
-    'https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt',
-    'https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/http.txt',
-    'https://raw.githubusercontent.com/roosterkid/openproxylist/main/HTTP_RAW.txt'
+    'https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt',
+    'https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-http.txt',
+    'https://www.proxy-list.download/api/v1/get?type=http',
+    'https://raw.githubusercontent.com/sunny9577/proxy-scraper/master/generated/http_proxies.txt',
+    'https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt'
 ];
 
 const randomDelay = (min, max) => new Promise(r => setTimeout(r, Math.floor(Math.random() * (max - min + 1) + min)));
@@ -27,29 +29,34 @@ let lastExecutions = [];
 const MAX_CALLS_PER_30S = 2;
 let workingProxies = [];
 
-// 1. Buscar Proxies
+// 1. Buscar Proxies de Múltiplas Fontes (Filtro Reforçado com Regex)
 async function fetchProxies() {
-    const allProxies = new Set();
+    const allProxies = new Set(); // Usa Set para evitar duplicatas
+    
     for (const url of PROXY_API_URLS) {
         try {
-            console.log(`Buscando de: ${url.split('/').slice(-1)[0]}...`);
+            const shortName = url.split('/').slice(-1)[0].substring(0, 25);
+            console.log(`Buscando de: ${shortName}...`);
+            
             const response = await fetch(url);
             const text = await response.text();
-            const proxies = text.split('\n')
-                .map(line => line.trim())
-                .filter(line => line.length > 0 && !line.startsWith('#'))
-                .map(line => {
-                    if (line.startsWith('http://')) return line.replace('http://', '');
-                    if (line.startsWith('https://')) return line.replace('https://', '');
-                    return line;
-                })
-                .filter(line => /\d+\.\d+\.\d+\.\d+:\d+/.test(line));
-            proxies.forEach(p => allProxies.add(p));
-            console.log(`✅ ${proxies.length} proxies desta fonte.`);
+            
+            // Expressão regular para encontrar PADRÃO IP:PORTA em qualquer parte do texto
+            const ipPortRegex = /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{1,5}\b/g;
+            const matches = text.match(ipPortRegex);
+            
+            if (matches && matches.length > 0) {
+                matches.forEach(p => allProxies.add(p));
+                console.log(`✅ ${matches.length} proxies desta fonte.`);
+            } else {
+                console.log(`⚠️ Nenhum proxy válido encontrado nesta fonte.`);
+            }
         } catch (error) {
             console.warn(`⚠️ Erro ao buscar de ${url}: ${error.message}`);
         }
     }
+    
+    // Adiciona http:// em todos para o Puppeteer entender
     const result = Array.from(allProxies).map(p => `http://${p}`);
     console.log(`✅ Total único: ${result.length} proxies HTTP prontos para uso.`);
     return result;
