@@ -1,8 +1,7 @@
-# No terminal, dentro da pasta do projeto:
-echo "node_modules
+node_modules
 npm-debug.log
 .env
 .git
 .gitignore
 README.md
-.DS_Store" > .dockerignore
+.DS_Store
