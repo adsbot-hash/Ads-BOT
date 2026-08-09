@@ -13,7 +13,7 @@ app.use(express.json());
 
 const SITE_URL = 'https://getflix-phi.vercel.app/';
 
-// NOVAS FONTES DE PROXIES (5 Fontes robustas)
+// FONTES DE PROXIES
 const PROXY_API_URLS = [
     'https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt',
     'https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-http.txt',
@@ -29,22 +29,17 @@ let lastExecutions = [];
 const MAX_CALLS_PER_30S = 2;
 let workingProxies = [];
 
-// 1. Buscar Proxies de Múltiplas Fontes (Filtro Reforçado com Regex)
+// 1. Buscar Proxies
 async function fetchProxies() {
-    const allProxies = new Set(); // Usa Set para evitar duplicatas
-    
+    const allProxies = new Set();
     for (const url of PROXY_API_URLS) {
         try {
             const shortName = url.split('/').slice(-1)[0].substring(0, 25);
             console.log(`Buscando de: ${shortName}...`);
-            
             const response = await fetch(url);
             const text = await response.text();
-            
-            // Expressão regular para encontrar PADRÃO IP:PORTA em qualquer parte do texto
             const ipPortRegex = /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{1,5}\b/g;
             const matches = text.match(ipPortRegex);
-            
             if (matches && matches.length > 0) {
                 matches.forEach(p => allProxies.add(p));
                 console.log(`✅ ${matches.length} proxies desta fonte.`);
@@ -55,8 +50,6 @@ async function fetchProxies() {
             console.warn(`⚠️ Erro ao buscar de ${url}: ${error.message}`);
         }
     }
-    
-    // Adiciona http:// em todos para o Puppeteer entender
     const result = Array.from(allProxies).map(p => `http://${p}`);
     console.log(`✅ Total único: ${result.length} proxies HTTP prontos para uso.`);
     return result;
@@ -121,7 +114,7 @@ async function executarSequenciaGetflix() {
             });
 
             page = await browser.newPage();
-            page.setDefaultTimeout(60000); 
+            page.setDefaultTimeout(60000); // 60s de tolerância
             
             await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
             await page.setViewport({ width: 1366, height: 768 });
@@ -132,14 +125,17 @@ async function executarSequenciaGetflix() {
                 Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
             });
 
+            // MONITOR DE MONETIZAÇÃO E POP-UPS
             browser.on('targetcreated', async (target) => {
                 if (target.type() === 'page') {
                     const adPage = await target.page();
                     if (adPage) {
                         try {
-                            await randomDelay(2000, 4000);
+                            console.log('💰 [Monetização] Smartlink/Anúncio abriu! Contando impressão...');
+                            await randomDelay(2000, 4000); // Deixa aberto para contar
                             await adPage.close();
                             await page.bringToFront();
+                            console.log('🔒 Anúncio fechado. Voltando ao GETFLIX.');
                         } catch (e) {}
                     }
                 }
@@ -154,7 +150,7 @@ async function executarSequenciaGetflix() {
                 if (workingProxies.length > 20) workingProxies.shift();
             }
 
-            // HELPER BLINDADO: Pega coordenadas puras para não dar erro no ghost-cursor
+            // FUNÇÕES AUXILIARES BLINDADAS (Sem element.evaluate)
             const pegarCentroDoSeletor = async (seletor) => {
                 return await page.evaluate((sel) => {
                     const el = document.querySelector(sel);
@@ -170,15 +166,21 @@ async function executarSequenciaGetflix() {
                     return els.map(el => {
                         const rect = el.getBoundingClientRect();
                         return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
-                    }).filter(b => b.x > 0 && b.y > 0); // Apenas visíveis
+                    }).filter(b => b.x > 0 && b.y > 0);
                 }, seletor);
             };
 
             const clicarNasCoordenadas = async (coords) => {
-                if (coords) {
+                if (!coords || typeof coords.x !== 'number' || typeof coords.y !== 'number') {
+                    console.warn('⚠️ Coordenadas inválidas, pulando clique.');
+                    return;
+                }
+                try {
                     await cursor.move({ x: coords.x, y: coords.y });
                     await randomDelay(100, 300);
-                    await page.mouse.click(coords.x, coords.y); // Clique nativo do Puppeteer
+                    await page.mouse.click(coords.x, coords.y);
+                } catch (e) {
+                    console.warn('Falha ao clicar nas coordenadas:', e.message);
                 }
             };
 
@@ -186,74 +188,89 @@ async function executarSequenciaGetflix() {
             await cursor.move({ x: 600, y: 400 });
             await randomDelay(1000, 2000);
             
-            if (Math.random() < 0.3) {
-                console.log('⌨️ Abrindo busca e digitando...');
-                const searchBtn = await pegarCentroDoSeletor('#searchToggle');
-                await clicarNasCoordenadas(searchBtn);
-                await randomDelay(500, 1000);
-                const termos = ['Batman', 'Interestelar', 'Série', 'Anime', 'Terror'];
-                const termo = termos[Math.floor(Math.random() * termos.length)];
-                await page.type('#searchInput', termo, { delay: 100 });
-                await randomDelay(2000, 4000);
-                const closeBtn = await pegarCentroDoSeletor('#searchClose');
-                await clicarNasCoordenadas(closeBtn);
-                await randomDelay(500, 1000);
-            }
+            // BLOCO 1: BUSCA (Try/Catch isolado)
+            try {
+                if (Math.random() < 0.3) {
+                    console.log('⌨️ Abrindo busca e digitando...');
+                    const searchBtn = await pegarCentroDoSeletor('#searchToggle');
+                    await clicarNasCoordenadas(searchBtn);
+                    await randomDelay(500, 1000);
+                    const termos = ['Batman', 'Interestelar', 'Série', 'Anime', 'Terror'];
+                    const termo = termos[Math.floor(Math.random() * termos.length)];
+                    await page.type('#searchInput', termo, { delay: 100 });
+                    await randomDelay(2000, 4000);
+                    const closeBtn = await pegarCentroDoSeletor('#searchClose');
+                    await clicarNasCoordenadas(closeBtn);
+                    await randomDelay(500, 1000);
+                }
+            } catch (e) { console.warn('Erro na busca:', e.message); }
 
             await page.evaluate(() => window.scrollBy(0, 600));
             await randomDelay(1000, 3000);
 
-            if (Math.random() < 0.4) {
-                const bannerCoords = await pegarCentroDeVarios('.ad-mobile, .ad-native');
-                if (bannerCoords.length > 0) {
-                    const target = bannerCoords[Math.floor(Math.random() * bannerCoords.length)];
-                    const currentUrl = page.url();
-                    await clicarNasCoordenadas(target);
-                    await randomDelay(2000, 4000); 
-                    if (page.url() !== currentUrl) {
-                        await page.goBack({ waitUntil: 'domcontentloaded' });
-                        await randomDelay(1000, 2000);
+            // BLOCO 2: BANNERS (Try/Catch isolado)
+            try {
+                if (Math.random() < 0.4) {
+                    const bannerCoords = await pegarCentroDeVarios('.ad-mobile, .ad-native');
+                    if (bannerCoords.length > 0) {
+                        const target = bannerCoords[Math.floor(Math.random() * bannerCoords.length)];
+                        const currentUrl = page.url();
+                        await clicarNasCoordenadas(target);
+                        await randomDelay(2000, 4000); 
+                        if (page.url() !== currentUrl) {
+                            await page.goBack({ waitUntil: 'domcontentloaded' });
+                            await randomDelay(1000, 2000);
+                        }
                     }
                 }
-            }
+            } catch (e) { console.warn('Erro no banner:', e.message); }
 
-            const filmeCoords = await pegarCentroDeVarios('#main-content .mc');
-            if (filmeCoords.length > 0) {
-                const target = filmeCoords[Math.floor(Math.random() * filmeCoords.length)];
-                await clicarNasCoordenadas(target);
-                await page.waitForNavigation({ waitUntil: 'domcontentloaded' });
-            }
-
-            await page.waitForSelector('#mainPlayer');
-            await randomDelay(2000, 4000);
-            
-            if (Math.random() < 0.3) {
-                const playerBanners = await pegarCentroDeVarios('.ad-mobile, .ad-sidebar');
-                if (playerBanners.length > 0) {
-                    const target = playerBanners[Math.floor(Math.random() * playerBanners.length)];
+            // BLOCO 3: CLICAR NO FILME (Try/Catch isolado)
+            try {
+                const filmeCoords = await pegarCentroDeVarios('#main-content .mc');
+                if (filmeCoords.length > 0) {
+                    const target = filmeCoords[Math.floor(Math.random() * filmeCoords.length)];
                     await clicarNasCoordenadas(target);
-                    await randomDelay(2000, 3000);
+                    await page.waitForNavigation({ waitUntil: 'domcontentloaded' });
                 }
-            }
+            } catch (e) { console.warn('Erro ao clicar no filme:', e.message); }
 
-            await page.evaluate(() => {
-                const recs = document.getElementById('recsSection');
-                if (recs) recs.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            });
-            await randomDelay(2000, 4000);
+            // BLOCO 4: PÁGINA DO PLAYER
+            try {
+                await page.waitForSelector('#mainPlayer');
+                await randomDelay(2000, 4000);
+                
+                if (Math.random() < 0.3) {
+                    const playerBanners = await pegarCentroDeVarios('.ad-mobile, .ad-sidebar');
+                    if (playerBanners.length > 0) {
+                        const target = playerBanners[Math.floor(Math.random() * playerBanners.length)];
+                        await clicarNasCoordenadas(target);
+                        await randomDelay(2000, 3000);
+                    }
+                }
+            } catch (e) { console.warn('Erro no player:', e.message); }
 
-            const recsCoords = await pegarCentroDeVarios('#recsGrid .mc');
-            if (recsCoords.length > 0) {
-                const target = recsCoords[Math.floor(Math.random() * recsCoords.length)];
-                await clicarNasCoordenadas(target);
-                await randomDelay(3000, 8000);
-            }
+            // BLOCO 5: RECOMENDAÇÕES
+            try {
+                await page.evaluate(() => {
+                    const recs = document.getElementById('recsSection');
+                    if (recs) recs.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                });
+                await randomDelay(2000, 4000);
+
+                const recsCoords = await pegarCentroDeVarios('#recsGrid .mc');
+                if (recsCoords.length > 0) {
+                    const target = recsCoords[Math.floor(Math.random() * recsCoords.length)];
+                    await clicarNasCoordenadas(target);
+                    await randomDelay(3000, 8000);
+                }
+            } catch (e) { console.warn('Erro nas recomendações:', e.message); }
 
             console.log('🎉 Engajamento concluído com sucesso!');
             break; 
             
         } catch (error) {
-            console.warn(`⚠️ Erro ou timeout estourado: ${error.message}`);
+            console.warn(`⚠️ Erro fatal ou timeout estourado: ${error.message}`);
             workingProxies = workingProxies.filter(p => p !== proxy);
         } finally {
             try { if (page) await page.close(); } catch (e) {}
@@ -276,7 +293,7 @@ async function processQueue() {
             lastExecutions.push(now);
             await executarSequenciaGetflix();
         } else {
-            const tempoParaEsperar = 40000 - (now - lastExecutions[0]) + 1000;
+            const tempoParaEsperar = 30000 - (now - lastExecutions[0]) + 1000;
             console.log(`⏳ Limite de taxa. Aguardando ${Math.round(tempoParaEsperar/1000)}s...`);
             await new Promise(r => setTimeout(r, tempoParaEsperar));
         }
