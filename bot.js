@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-const { createCursor } = require('ghost-cursor');
+// Removido: const { createCursor } = require('ghost-cursor');
 const axios = require('axios');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 
@@ -13,7 +13,6 @@ app.use(express.json());
 
 const SITE_URL = 'https://getflix-phi.vercel.app/';
 
-// FONTES DE PROXIES
 const PROXY_API_URLS = [
     'https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt',
     'https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-http.txt',
@@ -118,21 +117,20 @@ async function executarSequenciaGetflix() {
             
             await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
             await page.setViewport({ width: 1366, height: 768 });
-            const cursor = createCursor(page);
 
             await page.evaluateOnNewDocument(() => {
                 Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
                 Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
             });
 
-            // MONITOR DE MONETIZAÇÃO E POP-UPS
+            // MONITOR DE MONETIZAÇÃO
             browser.on('targetcreated', async (target) => {
                 if (target.type() === 'page') {
                     const adPage = await target.page();
                     if (adPage) {
                         try {
                             console.log('💰 [Monetização] Smartlink/Anúncio abriu! Contando impressão...');
-                            await randomDelay(2000, 4000); // Deixa aberto para contar
+                            await randomDelay(2000, 4000);
                             await adPage.close();
                             await page.bringToFront();
                             console.log('🔒 Anúncio fechado. Voltando ao GETFLIX.');
@@ -150,7 +148,7 @@ async function executarSequenciaGetflix() {
                 if (workingProxies.length > 20) workingProxies.shift();
             }
 
-            // FUNÇÕES AUXILIARES BLINDADAS (Sem element.evaluate)
+            // FUNÇÕES AUXILIARES BLINDADAS (Sem ghost-cursor, 100% nativo)
             const pegarCentroDoSeletor = async (seletor) => {
                 return await page.evaluate((sel) => {
                     const el = document.querySelector(sel);
@@ -170,25 +168,31 @@ async function executarSequenciaGetflix() {
                 }, seletor);
             };
 
-            const clicarNasCoordenadas = async (coords) => {
-                if (!coords || typeof coords.x !== 'number' || typeof coords.y !== 'number') {
-                    console.warn('⚠️ Coordenadas inválidas, pulando clique.');
-                    return;
+            const moverMouseRealista = async (x, y) => {
+                // Move o mouse em passos para simular movimento humano (sem bibliotecas)
+                const steps = 10;
+                for (let i = 1; i <= steps; i++) {
+                    await page.mouse.move((x / steps) * i + Math.random() * 5, (y / steps) * i + Math.random() * 5);
+                    await new Promise(r => setTimeout(r, 10));
                 }
+            };
+
+            const clicarNasCoordenadas = async (coords) => {
+                if (!coords || typeof coords.x !== 'number' || typeof coords.y !== 'number') return;
                 try {
-                    await cursor.move({ x: coords.x, y: coords.y });
+                    await moverMouseRealista(coords.x, coords.y);
                     await randomDelay(100, 300);
                     await page.mouse.click(coords.x, coords.y);
                 } catch (e) {
-                    console.warn('Falha ao clicar nas coordenadas:', e.message);
+                    console.warn('Falha ao clicar:', e.message);
                 }
             };
 
             console.log('✅ Site carregado. Iniciando comportamento humano...');
-            await cursor.move({ x: 600, y: 400 });
+            await moverMouseRealista(600, 400);
             await randomDelay(1000, 2000);
             
-            // BLOCO 1: BUSCA (Try/Catch isolado)
+            // BLOCO 1: BUSCA
             try {
                 if (Math.random() < 0.3) {
                     console.log('⌨️ Abrindo busca e digitando...');
@@ -208,7 +212,7 @@ async function executarSequenciaGetflix() {
             await page.evaluate(() => window.scrollBy(0, 600));
             await randomDelay(1000, 3000);
 
-            // BLOCO 2: BANNERS (Try/Catch isolado)
+            // BLOCO 2: BANNERS
             try {
                 if (Math.random() < 0.4) {
                     const bannerCoords = await pegarCentroDeVarios('.ad-mobile, .ad-native');
@@ -225,7 +229,7 @@ async function executarSequenciaGetflix() {
                 }
             } catch (e) { console.warn('Erro no banner:', e.message); }
 
-            // BLOCO 3: CLICAR NO FILME (Try/Catch isolado)
+            // BLOCO 3: FILME
             try {
                 const filmeCoords = await pegarCentroDeVarios('#main-content .mc');
                 if (filmeCoords.length > 0) {
@@ -235,7 +239,7 @@ async function executarSequenciaGetflix() {
                 }
             } catch (e) { console.warn('Erro ao clicar no filme:', e.message); }
 
-            // BLOCO 4: PÁGINA DO PLAYER
+            // BLOCO 4: PLAYER
             try {
                 await page.waitForSelector('#mainPlayer');
                 await randomDelay(2000, 4000);
