@@ -13,7 +13,7 @@ app.use(express.json());
 
 const SITE_URL = 'https://getflix-phi.vercel.app/';
 
-// NOVAS FONTES DE PROXIES
+// NOVAS FONTES DE PROXIES (5 Fontes robustas)
 const PROXY_API_URLS = [
     'https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt',
     'https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-http.txt',
@@ -29,17 +29,22 @@ let lastExecutions = [];
 const MAX_CALLS_PER_30S = 2;
 let workingProxies = [];
 
-// 1. Buscar Proxies
+// 1. Buscar Proxies de Múltiplas Fontes (Filtro Reforçado com Regex)
 async function fetchProxies() {
-    const allProxies = new Set();
+    const allProxies = new Set(); // Usa Set para evitar duplicatas
+    
     for (const url of PROXY_API_URLS) {
         try {
             const shortName = url.split('/').slice(-1)[0].substring(0, 25);
             console.log(`Buscando de: ${shortName}...`);
+            
             const response = await fetch(url);
             const text = await response.text();
+            
+            // Expressão regular para encontrar PADRÃO IP:PORTA em qualquer parte do texto
             const ipPortRegex = /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{1,5}\b/g;
             const matches = text.match(ipPortRegex);
+            
             if (matches && matches.length > 0) {
                 matches.forEach(p => allProxies.add(p));
                 console.log(`✅ ${matches.length} proxies desta fonte.`);
@@ -50,6 +55,8 @@ async function fetchProxies() {
             console.warn(`⚠️ Erro ao buscar de ${url}: ${error.message}`);
         }
     }
+    
+    // Adiciona http:// em todos para o Puppeteer entender
     const result = Array.from(allProxies).map(p => `http://${p}`);
     console.log(`✅ Total único: ${result.length} proxies HTTP prontos para uso.`);
     return result;
@@ -114,7 +121,6 @@ async function executarSequenciaGetflix() {
             });
 
             page = await browser.newPage();
-            // ⏱️ TEMPO AUMENTADO PARA 60 SEGUNDOS
             page.setDefaultTimeout(60000); 
             
             await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
@@ -148,6 +154,7 @@ async function executarSequenciaGetflix() {
                 if (workingProxies.length > 20) workingProxies.shift();
             }
 
+            // HELPER BLINDADO: Pega coordenadas puras para não dar erro no ghost-cursor
             const pegarCentroDoSeletor = async (seletor) => {
                 return await page.evaluate((sel) => {
                     const el = document.querySelector(sel);
@@ -163,7 +170,7 @@ async function executarSequenciaGetflix() {
                     return els.map(el => {
                         const rect = el.getBoundingClientRect();
                         return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
-                    }).filter(b => b.x > 0 && b.y > 0);
+                    }).filter(b => b.x > 0 && b.y > 0); // Apenas visíveis
                 }, seletor);
             };
 
@@ -171,7 +178,7 @@ async function executarSequenciaGetflix() {
                 if (coords) {
                     await cursor.move({ x: coords.x, y: coords.y });
                     await randomDelay(100, 300);
-                    await page.mouse.click(coords.x, coords.y);
+                    await page.mouse.click(coords.x, coords.y); // Clique nativo do Puppeteer
                 }
             };
 
@@ -269,7 +276,7 @@ async function processQueue() {
             lastExecutions.push(now);
             await executarSequenciaGetflix();
         } else {
-            const tempoParaEsperar = 30000 - (now - lastExecutions[0]) + 1000;
+            const tempoParaEsperar = 40000 - (now - lastExecutions[0]) + 1000;
             console.log(`⏳ Limite de taxa. Aguardando ${Math.round(tempoParaEsperar/1000)}s...`);
             await new Promise(r => setTimeout(r, tempoParaEsperar));
         }
