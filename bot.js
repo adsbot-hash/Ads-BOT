@@ -13,8 +13,8 @@ app.use(express.json());
 
 const SITE_URL = 'https://getflix-phi.vercel.app/';
 
-// API ATUALIZADA: Adicionado &timeout=5000 no final para pegar só os rápidos
-const PROXY_API_URL = 'https://api.proxyscrape.com/v4/free-proxy-list/get?request=display_proxies&proxy_format=protocolipport&format=text&timeout=5000&country=all';
+// API ATUALIZADA: Adicionado &ssl=true para pegar APENAS proxies que suportam HTTPS
+const PROXY_API_URL = 'https://api.proxyscrape.com/v4/free-proxy-list/get?request=display_proxies&proxy_format=protocolipport&format=text&timeout=5000&ssl=true&country=all';
 
 const randomDelay = (min, max) => new Promise(r => setTimeout(r, Math.floor(Math.random() * (max - min + 1) + min)));
 
@@ -23,16 +23,16 @@ let lastExecutions = [];
 const MAX_CALLS_PER_30S = 2;
 let workingProxies = [];
 
-// 1. Buscar Proxies Rápidos da API
+// 1. Buscar Proxies Rápidos com Suporte a HTTPS
 async function fetchProxies() {
     try {
-        console.log('Buscando lista de proxies rápidos (latência < 5s)...');
+        console.log('Buscando proxies rápidos com suporte a HTTPS...');
         const response = await fetch(PROXY_API_URL);
         const text = await response.text();
         const proxies = text.split('\n')
             .map(line => line.trim())
             .filter(line => line.startsWith('http://') || line.startsWith('https://'));
-        console.log(`✅ ${proxies.length} proxies rápidos encontrados.`);
+        console.log(`✅ ${proxies.length} proxies HTTPS encontrados.`);
         return proxies;
     } catch (error) {
         console.error('Erro ao buscar proxies:', error.message);
@@ -40,14 +40,14 @@ async function fetchProxies() {
     }
 }
 
-// 2. Validação Superrápida (3 segundos)
-async function proxyEstaVivo(proxyUrl, testUrl = SITE_URL, timeout = 3000) {
+// 2. Validação Superrápida (5 segundos) - Testa o túnel HTTPS
+async function proxyEstaVivo(proxyUrl, testUrl = SITE_URL, timeout = 5000) {
     try {
         const agent = new HttpsProxyAgent(proxyUrl);
         await axios.get(testUrl, {
             httpAgent: agent,
             httpsAgent: agent,
-            timeout: timeout, // Se não responder em 3s, descarta
+            timeout: timeout,
             maxRedirects: 0,
             validateStatus: () => true
         });
@@ -99,7 +99,7 @@ async function executarSequenciaGetflix() {
             });
 
             page = await browser.newPage();
-            page.setDefaultTimeout(25000); // 25s para carregar a página no Puppeteer
+            page.setDefaultTimeout(25000); // 25s para carregar a página
             
             await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
             await page.setViewport({ width: 1366, height: 768 });
@@ -132,7 +132,6 @@ async function executarSequenciaGetflix() {
                 if (workingProxies.length > 20) workingProxies.shift();
             }
 
-            // Função auxiliar para mover e clicar usando coordenadas (CORRIGE O element.evaluate)
             const moverEClickar = async (elemento) => {
                 const box = await elemento.boundingBox();
                 if (box) {
