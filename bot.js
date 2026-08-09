@@ -13,7 +13,8 @@ app.use(express.json());
 
 const SITE_URL = 'https://getflix-phi.vercel.app/';
 
-const PROXY_API_URL = 'https://api.proxyscrape.com/v4/free-proxy-list/get?request=display_proxies&proxy_format=protocolipport&format=text&country=af%2Cal%2Cdz%2Cad%2Cao%2Car%2Cam%2Cau%2Cat%2Caz%2Cbd%2Cby%2Cbe%2Cbj%2Cbm%2Cbt%2Cbo%2Cbw%2Cbg%2Cbf%2Cbi%2Ckh%2Ccm%2Cca%2Ctd%2Ccl%2Ccn%2Cco%2Ccg%2Ccr%2Chr%2Ccy%2Ccz%2Cdk%2Cdo%2Cec%2Ceg%2Csv%2Cgq%2Cee%2Csz%2Cet%2Cfj%2Cfi%2Cfr%2Cgm%2Cge%2Cde%2Cgh%2Cgi%2Cgr%2Cgu%2Cgt%2Cgn%2Cht%2Chn%2Chk%2Chu%2Cin%2Cid%2Cir%2Ciq%2Cie%2Cil%2Cit%2Cjm%2Cjp%2Cjo%2Ckz%2Cke%2Ckr%2Ckg%2Clv%2Clb%2Cls%2Clt%2Cmg%2Cmw%2Cmy%2Cmv%2Cml%2Cmt%2Cmu%2Cmx%2Cmd%2Cmn%2Cme%2Cma%2Cmz%2Cmm%2Cna%2Cnp%2Cnl%2Cnz%2Cni%2Cng%2Cmk%2Cno%2Cpk%2Cps%2Cpa%2Cpy%2Cpe%2Cph%2Cpl%2Cpt%2Cpr%2Cqa%2Cro%2Crw%2Ckn%2Csa%2Csn%2Crs%2Csc%2Csl%2Csg%2Csk%2Csi%2Cso%2Cza%2Ces%2Clk%2Csd%2Cse%2Cch%2Csy%2Ctw%2Ctj%2Ctz%2Cth%2Ctl%2Ctg%2Ctn%2Ctr%2Cug%2Cua%2Cae%2Cgb%2Cus%2Cuy%2Cuz%2Cve%2Cvn%2Cvi%2Cye%2Czw';
+// API ATUALIZADA: Adicionado &timeout=5000 no final para pegar só os rápidos
+const PROXY_API_URL = 'https://api.proxyscrape.com/v4/free-proxy-list/get?request=display_proxies&proxy_format=protocolipport&format=text&timeout=5000&country=all';
 
 const randomDelay = (min, max) => new Promise(r => setTimeout(r, Math.floor(Math.random() * (max - min + 1) + min)));
 
@@ -22,16 +23,16 @@ let lastExecutions = [];
 const MAX_CALLS_PER_30S = 2;
 let workingProxies = [];
 
-// 1. Buscar Proxies da API
+// 1. Buscar Proxies Rápidos da API
 async function fetchProxies() {
     try {
-        console.log('Buscando lista de proxies...');
+        console.log('Buscando lista de proxies rápidos (latência < 5s)...');
         const response = await fetch(PROXY_API_URL);
         const text = await response.text();
         const proxies = text.split('\n')
             .map(line => line.trim())
             .filter(line => line.startsWith('http://') || line.startsWith('https://'));
-        console.log(`✅ ${proxies.length} proxies HTTP encontrados.`);
+        console.log(`✅ ${proxies.length} proxies rápidos encontrados.`);
         return proxies;
     } catch (error) {
         console.error('Erro ao buscar proxies:', error.message);
@@ -39,14 +40,14 @@ async function fetchProxies() {
     }
 }
 
-// 2. Validação rápida de Proxy com Axios
-async function proxyEstaVivo(proxyUrl, testUrl = SITE_URL, timeout = 5000) {
+// 2. Validação Superrápida (3 segundos)
+async function proxyEstaVivo(proxyUrl, testUrl = SITE_URL, timeout = 3000) {
     try {
         const agent = new HttpsProxyAgent(proxyUrl);
         await axios.get(testUrl, {
             httpAgent: agent,
             httpsAgent: agent,
-            timeout: timeout,
+            timeout: timeout, // Se não responder em 3s, descarta
             maxRedirects: 0,
             validateStatus: () => true
         });
@@ -72,7 +73,7 @@ async function executarSequenciaGetflix() {
         return;
     }
 
-    const maxRetries = 10; // ⬅️ ATUALIZADO: Aumentado para 10 tentativas
+    const maxRetries = 10; 
     
     for (let i = 0; i < maxRetries; i++) {
         const proxy = proxyList[Math.floor(Math.random() * proxyList.length)];
@@ -80,7 +81,7 @@ async function executarSequenciaGetflix() {
         
         const vivo = await proxyEstaVivo(proxy);
         if (!vivo) {
-            console.log(`⏳ Proxy morto. Pulando...`);
+            console.log(`⏳ Proxy morto/lento. Pulando...`);
             workingProxies = workingProxies.filter(p => p !== proxy);
             continue;
         }
@@ -98,7 +99,7 @@ async function executarSequenciaGetflix() {
             });
 
             page = await browser.newPage();
-            page.setDefaultTimeout(25000); // ⬅️ ATUALIZADO: Aumentado para 25s
+            page.setDefaultTimeout(25000); // 25s para carregar a página no Puppeteer
             
             await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
             await page.setViewport({ width: 1366, height: 768 });
@@ -131,7 +132,7 @@ async function executarSequenciaGetflix() {
                 if (workingProxies.length > 20) workingProxies.shift();
             }
 
-            // ⬅️ ATUALIZADO: Função auxiliar para mover e clicar usando coordenadas (Evita o erro element.evaluate)
+            // Função auxiliar para mover e clicar usando coordenadas (CORRIGE O element.evaluate)
             const moverEClickar = async (elemento) => {
                 const box = await elemento.boundingBox();
                 if (box) {
