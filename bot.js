@@ -22,23 +22,19 @@ let lastExecutions = [];
 const MAX_CALLS_PER_30S = 2;
 let workingProxies = [];
 
+// 1. Buscar Proxies da API (CÓDIGO CORRIGIDO)
 async function fetchProxies() {
     try {
         console.log('Buscando lista de proxies...');
         const response = await fetch(PROXY_API_URL);
         const text = await response.text();
+        
+        // A API já retorna no formato "http://152.53.20.190:20000"
+        // Apenas filtramos as linhas que começam com http ou https
         const proxies = text.split('\n')
             .map(line => line.trim())
-            .filter(line => line.length > 0)
-            .map(line => {
-                const parts = line.split(/\s+/);
-                if (parts.length === 2) {
-                    const proto = parts[0].toLowerCase();
-                    if (proto === 'http' || proto === 'https') return `${proto}://${parts[1]}`;
-                }
-                return null;
-            })
-            .filter(Boolean);
+            .filter(line => line.startsWith('http://') || line.startsWith('https://'));
+            
         console.log(`✅ ${proxies.length} proxies HTTP encontrados.`);
         return proxies;
     } catch (error) {
@@ -47,6 +43,7 @@ async function fetchProxies() {
     }
 }
 
+// 2. Validação rápida de Proxy com Axios
 async function proxyEstaVivo(proxyUrl, testUrl = SITE_URL, timeout = 5000) {
     try {
         const agent = new HttpsProxyAgent(proxyUrl);
@@ -63,6 +60,7 @@ async function proxyEstaVivo(proxyUrl, testUrl = SITE_URL, timeout = 5000) {
     }
 }
 
+// 3. Função Principal do Bot
 async function executarSequenciaGetflix() {
     let proxyList = [];
     if (workingProxies.length > 0) {
@@ -227,6 +225,7 @@ async function executarSequenciaGetflix() {
     console.log('Ciclo do bot finalizado.');
 }
 
+// --- GESTÃO DA FILA E RATE LIMIT ---
 async function processQueue() {
     if (isProcessing) return;
     isProcessing = true;
@@ -246,6 +245,9 @@ async function processQueue() {
     }
 }
 
+// --- ENDPOINTS DA API ---
+
+// Endpoint de Saúde (Monitoramento)
 app.get('/health', (req, res) => {
     res.json({
         status: 'online',
@@ -255,6 +257,7 @@ app.get('/health', (req, res) => {
     });
 });
 
+// Endpoint do Bot
 app.post('/api/engajar', async (req, res) => {
     res.status(202).json({ status: 'queued', message: 'Bot na fila.' });
     if (!isProcessing) {
