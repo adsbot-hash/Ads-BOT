@@ -13,7 +13,6 @@ app.use(express.json());
 
 const SITE_URL = 'https://getflix-phi.vercel.app/';
 
-// MÚLTIPLAS FONTES DE PROXIES
 const PROXY_API_URLS = [
     'https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all',
     'https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt',
@@ -28,49 +27,42 @@ let lastExecutions = [];
 const MAX_CALLS_PER_30S = 2;
 let workingProxies = [];
 
-// 1. Buscar Proxies de Múltiplas Fontes
+// 1. Buscar Proxies
 async function fetchProxies() {
-    const allProxies = new Set(); // Usa Set para evitar duplicatas
-    
+    const allProxies = new Set();
     for (const url of PROXY_API_URLS) {
         try {
             console.log(`Buscando de: ${url.split('/').slice(-1)[0]}...`);
             const response = await fetch(url);
             const text = await response.text();
-            
             const proxies = text.split('\n')
                 .map(line => line.trim())
                 .filter(line => line.length > 0 && !line.startsWith('#'))
-                // Padroniza: remove http:// ou https:// se existir, para ficar só com IP:PORTA
                 .map(line => {
                     if (line.startsWith('http://')) return line.replace('http://', '');
                     if (line.startsWith('https://')) return line.replace('https://', '');
                     return line;
                 })
-                // Filtra apenas o que parece com IP:PORTA (contém pontos e dois pontos)
                 .filter(line => /\d+\.\d+\.\d+\.\d+:\d+/.test(line));
-            
             proxies.forEach(p => allProxies.add(p));
             console.log(`✅ ${proxies.length} proxies desta fonte.`);
         } catch (error) {
             console.warn(`⚠️ Erro ao buscar de ${url}: ${error.message}`);
         }
     }
-    
-    // Adiciona http:// em todos para o Puppeteer entender
     const result = Array.from(allProxies).map(p => `http://${p}`);
     console.log(`✅ Total único: ${result.length} proxies HTTP prontos para uso.`);
     return result;
 }
 
-// 2. Validação Superrápida (3 segundos)
+// 2. Validação rápida
 async function proxyEstaVivo(proxyUrl, testUrl = SITE_URL, timeout = 3000) {
     try {
         const agent = new HttpsProxyAgent(proxyUrl);
         await axios.get(testUrl, {
             httpAgent: agent,
             httpsAgent: agent,
-            timeout: timeout, // Se não responder em 3s, descarta
+            timeout: timeout,
             maxRedirects: 0,
             validateStatus: () => true
         });
@@ -80,7 +72,7 @@ async function proxyEstaVivo(proxyUrl, testUrl = SITE_URL, timeout = 3000) {
     }
 }
 
-// 3. Função Principal do Bot
+// 3. Função Principal
 async function executarSequenciaGetflix() {
     let proxyList = [];
     if (workingProxies.length > 0) {
@@ -122,7 +114,7 @@ async function executarSequenciaGetflix() {
             });
 
             page = await browser.newPage();
-            page.setDefaultTimeout(25000); // 25s para carregar a página no Puppeteer
+            page.setDefaultTimeout(25000); 
             
             await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
             await page.setViewport({ width: 1366, height: 768 });
@@ -155,17 +147,31 @@ async function executarSequenciaGetflix() {
                 if (workingProxies.length > 20) workingProxies.shift();
             }
 
-            // Função auxiliar para mover e clicar usando coordenadas (CORRIGE O element.evaluate)
-            const moverEClickar = async (elemento) => {
-                const box = await elemento.boundingBox();
-                if (box) {
-                    const x = box.x + box.width / 2;
-                    const y = box.y + box.height / 2;
-                    await cursor.move({ x, y });
+            // HELPER BLINDADO: Pega coordenadas puras para não dar erro no ghost-cursor
+            const pegarCentroDoSeletor = async (seletor) => {
+                return await page.evaluate((sel) => {
+                    const el = document.querySelector(sel);
+                    if (!el) return null;
+                    const rect = el.getBoundingClientRect();
+                    return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+                }, seletor);
+            };
+
+            const pegarCentroDeVarios = async (seletor) => {
+                return await page.evaluate((sel) => {
+                    const els = Array.from(document.querySelectorAll(sel));
+                    return els.map(el => {
+                        const rect = el.getBoundingClientRect();
+                        return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+                    }).filter(b => b.x > 0 && b.y > 0); // Apenas visíveis
+                }, seletor);
+            };
+
+            const clicarNasCoordenadas = async (coords) => {
+                if (coords) {
+                    await cursor.move({ x: coords.x, y: coords.y });
                     await randomDelay(100, 300);
-                    await cursor.click({ x, y });
-                } else {
-                    await elemento.click();
+                    await page.mouse.click(coords.x, coords.y); // Clique nativo do Puppeteer
                 }
             };
 
@@ -175,13 +181,15 @@ async function executarSequenciaGetflix() {
             
             if (Math.random() < 0.3) {
                 console.log('⌨️ Abrindo busca e digitando...');
-                await cursor.click('#searchToggle');
+                const searchBtn = await pegarCentroDoSeletor('#searchToggle');
+                await clicarNasCoordenadas(searchBtn);
                 await randomDelay(500, 1000);
                 const termos = ['Batman', 'Interestelar', 'Série', 'Anime', 'Terror'];
                 const termo = termos[Math.floor(Math.random() * termos.length)];
                 await page.type('#searchInput', termo, { delay: 100 });
                 await randomDelay(2000, 4000);
-                await page.click('#searchClose');
+                const closeBtn = await pegarCentroDoSeletor('#searchClose');
+                await clicarNasCoordenadas(closeBtn);
                 await randomDelay(500, 1000);
             }
 
@@ -189,11 +197,11 @@ async function executarSequenciaGetflix() {
             await randomDelay(1000, 3000);
 
             if (Math.random() < 0.4) {
-                const banners = await page.$$('.ad-mobile, .ad-native');
-                if (banners.length > 0) {
-                    const banner = banners[Math.floor(Math.random() * banners.length)];
+                const bannerCoords = await pegarCentroDeVarios('.ad-mobile, .ad-native');
+                if (bannerCoords.length > 0) {
+                    const target = bannerCoords[Math.floor(Math.random() * bannerCoords.length)];
                     const currentUrl = page.url();
-                    await moverEClickar(banner);
+                    await clicarNasCoordenadas(target);
                     await randomDelay(2000, 4000); 
                     if (page.url() !== currentUrl) {
                         await page.goBack({ waitUntil: 'domcontentloaded' });
@@ -202,10 +210,10 @@ async function executarSequenciaGetflix() {
                 }
             }
 
-            const filmes = await page.$$('#main-content .mc');
-            if (filmes.length > 0) {
-                const filmeAleatorio = filmes[Math.floor(Math.random() * filmes.length)];
-                await moverEClickar(filmeAleatorio);
+            const filmeCoords = await pegarCentroDeVarios('#main-content .mc');
+            if (filmeCoords.length > 0) {
+                const target = filmeCoords[Math.floor(Math.random() * filmeCoords.length)];
+                await clicarNasCoordenadas(target);
                 await page.waitForNavigation({ waitUntil: 'domcontentloaded' });
             }
 
@@ -213,10 +221,10 @@ async function executarSequenciaGetflix() {
             await randomDelay(2000, 4000);
             
             if (Math.random() < 0.3) {
-                const playerBanners = await page.$$('.ad-mobile, .ad-sidebar');
+                const playerBanners = await pegarCentroDeVarios('.ad-mobile, .ad-sidebar');
                 if (playerBanners.length > 0) {
-                    const pBanner = playerBanners[Math.floor(Math.random() * playerBanners.length)];
-                    await moverEClickar(pBanner);
+                    const target = playerBanners[Math.floor(Math.random() * playerBanners.length)];
+                    await clicarNasCoordenadas(target);
                     await randomDelay(2000, 3000);
                 }
             }
@@ -227,10 +235,10 @@ async function executarSequenciaGetflix() {
             });
             await randomDelay(2000, 4000);
 
-            const recs = await page.$$('#recsGrid .mc');
-            if (recs.length > 0) {
-                const recAleatoria = recs[Math.floor(Math.random() * recs.length)];
-                await moverEClickar(recAleatoria);
+            const recsCoords = await pegarCentroDeVarios('#recsGrid .mc');
+            if (recsCoords.length > 0) {
+                const target = recsCoords[Math.floor(Math.random() * recsCoords.length)];
+                await clicarNasCoordenadas(target);
                 await randomDelay(3000, 8000);
             }
 
@@ -269,7 +277,6 @@ async function processQueue() {
 }
 
 // --- ENDPOINTS DA API ---
-
 app.get('/health', (req, res) => {
     res.json({
         status: 'online',
