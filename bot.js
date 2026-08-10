@@ -23,7 +23,7 @@ const PROXY_API_URLS = [
     
     // NOVA FONTE 1: Geonode (JSON)
     'https://proxylist.geonode.com/api/proxy-list?anonymityLevel=elite&speed=fast&page=1&limit=290&sort_by=responseTime&sort_type=asc',
-    // NOVA FONTE 2: Proxmint (HTTP e formato TXT) -- ADICIONADA A VÍRGULA ACIMA
+    // NOVA FONTE 2: Proxmint (HTTP e formato TXT)
     'https://proxmint.com/api/free-proxies?protocol=http&format=txt&pageSize=200'    
 ];
 
@@ -34,7 +34,7 @@ let lastExecutions = [];
 const MAX_CALLS_PER_30S = 2;
 let workingProxies = [];
 
-// 1. Buscar Proxies (Leitor Inteligente: JSON ou Texto)
+// 1. Buscar Proxies
 async function fetchProxies() {
     const allProxies = new Set();
     for (const url of PROXY_API_URLS) {
@@ -42,18 +42,12 @@ async function fetchProxies() {
             const shortName = url.split('/').slice(-1)[0].substring(0, 25);
             console.log(`Buscando de: ${shortName}...`);
             
-            // 🔧 Adiciona User-Agent e Accept
             const response = await fetch(url, {
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                    'Accept': 'text/plain, */*',
-                    'Accept-Encoding': 'identity' // Desativa compressão para ver o texto cru
+                    'Accept': 'text/plain, */*'
                 }
             });
-
-            // 📡 LOG DO STATUS E HEADERS
-            console.log(`📡 Status: ${response.status} ${response.statusText}`);
-            console.log(`📡 Content-Type: ${response.headers.get('content-type')}`);
 
             if (!response.ok) {
                 console.warn(`⚠️ API respondeu com status ${response.status}. Pulando.`);
@@ -62,12 +56,9 @@ async function fetchProxies() {
 
             const text = await response.text();
             
-            // 📄 LOG DO CONTEÚDO BRUTO (primeiros 300 caracteres)
-            console.log(`📄 Conteúdo bruto (início): ${text.substring(0, 300)}`);
-
             let proxiesEncontrados = [];
 
-            // TENTATIVA 1: JSON (caso mude)
+            // TENTATIVA 1: JSON
             try {
                 const data = JSON.parse(text);
                 if (data.data && Array.isArray(data.data)) {
@@ -93,8 +84,6 @@ async function fetchProxies() {
                 const matches = text.match(ipPortRegex);
                 if (matches) {
                     proxiesEncontrados = matches;
-                } else {
-                    console.log(`⚠️ Nenhum proxy encontrado para ${shortName}. Texto completo (até 500 chars):`, text.substring(0, 500));
                 }
             }
 
@@ -110,15 +99,14 @@ async function fetchProxies() {
     return result;
 }
 
-// 2. Validação rápida
-async function proxyEstaVivo(proxyUrl, testUrl = SITE_URL, timeout = 3000) {
+// 2. Validação com httpbin.org
+async function proxyEstaVivo(proxyUrl, timeout = 10000) {
     try {
         const agent = new HttpsProxyAgent(proxyUrl);
-        await axios.get(testUrl, {
+        await axios.get('http://httpbin.org/ip', {
             httpAgent: agent,
             httpsAgent: agent,
             timeout: timeout,
-            maxRedirects: 0,
             validateStatus: () => true
         });
         return true;
@@ -169,7 +157,7 @@ async function executarSequenciaGetflix() {
             });
 
             page = await browser.newPage();
-            page.setDefaultTimeout(65000); // 65s de tolerância
+            page.setDefaultTimeout(65000);
             
             await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
             await page.setViewport({ width: 1366, height: 768 });
@@ -204,7 +192,7 @@ async function executarSequenciaGetflix() {
                 if (workingProxies.length > 20) workingProxies.shift();
             }
 
-            // FUNÇÕES AUXILIARES BLINDADAS (Sem ghost-cursor, 100% nativo)
+            // FUNÇÕES AUXILIARES
             const pegarCentroDoSeletor = async (seletor) => {
                 return await page.evaluate((sel) => {
                     const el = document.querySelector(sel);
@@ -225,7 +213,6 @@ async function executarSequenciaGetflix() {
             };
 
             const moverMouseRealista = async (x, y) => {
-                // Move o mouse em passos para simular movimento humano (sem bibliotecas)
                 const steps = 10;
                 for (let i = 1; i <= steps; i++) {
                     await page.mouse.move((x / steps) * i + Math.random() * 5, (y / steps) * i + Math.random() * 5);
