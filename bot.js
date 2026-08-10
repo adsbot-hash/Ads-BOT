@@ -12,7 +12,7 @@ app.use(express.json());
 
 const SITE_URL = 'https://getflix-phi.vercel.app/';
 
-// CONFIGURAÇÃO DO PROXY RESIDENCIAL PREMIUM
+// CONFIGURAÇÃO DO PROXY RESIDENCIAL PREMIUM (Credenciais exatas)
 const PROXY_HOST = 'residential.proxora.io';
 const PROXY_PORT = '12321';
 const PROXY_USER = '88612c34bc4a';
@@ -24,10 +24,9 @@ let isProcessing = false;
 let lastExecutions = [];
 const MAX_CALLS_PER_30S = 2;
 
-// 1. Função para gerar o link do proxy (para o Axios)
+// 1. Função para gerar o link do proxy
 async function fetchProxies() {
-    const sessionId = Math.floor(Math.random() * 1000000);
-    const proxyUrl = `http://${PROXY_USER}_session-${sessionId}:${PROXY_PASS}@${PROXY_HOST}:${PROXY_PORT}`;
+    const proxyUrl = `http://${PROXY_USER}:${PROXY_PASS}@${PROXY_HOST}:${PROXY_PORT}`;
     console.log(`✅ Proxy residencial premium configurado!`);
     return [proxyUrl];
 }
@@ -56,15 +55,14 @@ async function executarSequenciaGetflix() {
     const maxRetries = 10; 
     
     for (let i = 0; i < maxRetries; i++) {
-        const proxyUrlFull = proxyList[0]; // URL com login e senha (para o Axios)
+        const proxyUrlFull = proxyList[0]; 
         
         // URL apenas com host e porta (para o Chrome/Puppeteer)
         const proxyUrlChrome = `http://${PROXY_HOST}:${PROXY_PORT}`;
         
-        // Gera um novo ID de sessão a cada tentativa para forçar a troca de IP
-        const sessionId = Math.floor(Math.random() * 1000000);
+        // Credenciais exatas, sem sufixos
         const authCredentials = {
-            username: `${PROXY_USER}_session-${sessionId}`,
+            username: PROXY_USER,
             password: PROXY_PASS
         };
         
@@ -86,7 +84,6 @@ async function executarSequenciaGetflix() {
             browser = await puppeteer.launch({
                 headless: 'new',
                 executablePath: '/usr/bin/google-chrome-stable',
-                // Passa apenas o host e a porta para o Chrome
                 args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', `--proxy-server=${proxyUrlChrome}`]
             });
 
@@ -188,7 +185,7 @@ async function executarSequenciaGetflix() {
             await page.evaluate(() => window.scrollBy(0, 600));
             await randomDelay(1000, 3000);
 
-            // BLOCO 2: BANNERS (Foco no Native Banner - 60% chance)
+            // BLOCO 2: BANNERS 
             try {
                 if (Math.random() < 0.6) {
                     const bannerCoords = await pegarCentroDeVarios('.ad-native');
@@ -205,7 +202,7 @@ async function executarSequenciaGetflix() {
                 }
             } catch (e) { console.warn('Erro no banner:', e.message); }
 
-            // BLOCO 3: FILME (Aciona Smartlink - Timeout 25s)
+            // BLOCO 3: FILME 
             try {
                 const filmeCoords = await pegarCentroDeVarios('#main-content .mc');
                 if (filmeCoords.length > 0) {
