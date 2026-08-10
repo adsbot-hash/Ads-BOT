@@ -2,7 +2,6 @@ const express = require('express');
 const cors = require('cors');
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-// Removido: const { createCursor } = require('ghost-cursor');
 const axios = require('axios');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 
@@ -14,17 +13,10 @@ app.use(express.json());
 const SITE_URL = 'https://getflix-phi.vercel.app/';
 
 const PROXY_API_URLS = [
-    // FONTES ANTIGAS COMENTADAS PARA TESTAR APENAS O PROXMINT
-    // 'https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt',
-    // 'https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-http.txt',
-    // 'https://www.proxy-list.download/api/v1/get?type=http',
-    // 'https://raw.githubusercontent.com/sunny9577/proxy-scraper/master/generated/http_proxies.txt',
-    // 'https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt',
-    
     // NOVA FONTE 1: Geonode (JSON)
     'https://proxylist.geonode.com/api/proxy-list?anonymityLevel=elite&speed=fast&page=1&limit=290&sort_by=responseTime&sort_type=asc',
     // NOVA FONTE 2: Proxmint (HTTP e formato TXT)
-    'https://proxmint.com/api/free-proxies?protocol=http&format=txt&pageSize=200'    
+    'https://proxmint.com/api/free-proxies?protocol=http&format=txt&pageSize=500'    
 ];
 
 const randomDelay = (min, max) => new Promise(r => setTimeout(r, Math.floor(Math.random() * (max - min + 1) + min)));
@@ -159,6 +151,16 @@ async function executarSequenciaGetflix() {
             page = await browser.newPage();
             page.setDefaultTimeout(65000);
             
+            // BLOQUEAR IMAGENS E FONTES PARA CARREGAR MAIS RÁPIDO
+            await page.setRequestInterception(true);
+            page.on('request', (req) => {
+                if (['image', 'font', 'media'].includes(req.resourceType())) {
+                    req.abort();
+                } else {
+                    req.continue();
+                }
+            });
+
             await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
             await page.setViewport({ width: 1366, height: 768 });
 
