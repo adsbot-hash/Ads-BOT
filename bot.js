@@ -12,25 +12,50 @@ app.use(express.json());
 
 const SITE_URL = 'https://getflix-phi.vercel.app/';
 
-// CONFIGURAÇÃO DO PROXY RESIDENCIAL PREMIUM (Credenciais exatas)
-const PROXY_HOST = 'residential.proxora.io';
-const PROXY_PORT = '12321';
-const PROXY_USER = '88612c34bc4a';
-const PROXY_PASS = '27ca2a2cebe9_country-us';
+// FONTES DE PROXIES (Adicionada a nova API do Roundproxies)
+const PROXY_API_URLS = [
+    'https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt',
+    'https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-http.txt',
+    'https://www.proxy-list.download/api/v1/get?type=http',
+    'https://raw.githubusercontent.com/sunny9577/proxy-scraper/master/generated/http_proxies.txt',
+    'https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt',
+    // NOVA FONTE: Roundproxies (Filtro de proxies mais rápidos)
+    'https://roundproxies.com/api/get-free-proxies?limit=100&page=1&sort_by=lastChecked&sort_type=desc&speed=fast'
+];
 
 const randomDelay = (min, max) => new Promise(r => setTimeout(r, Math.floor(Math.random() * (max - min + 1) + min)));
 
 let isProcessing = false;
+let workingProxies = [];
 
-// 1. Função para gerar o link do proxy
+// 1. Buscar Proxies
 async function fetchProxies() {
-    const proxyUrl = `http://${PROXY_USER}:${PROXY_PASS}@${PROXY_HOST}:${PROXY_PORT}`;
-    console.log(`✅ Proxy residencial premium configurado!`);
-    return [proxyUrl];
+    const allProxies = new Set();
+    for (const url of PROXY_API_URLS) {
+        try {
+            const shortName = url.split('/').slice(-1)[0].substring(0, 25);
+            console.log(`Buscando de: ${shortName}...`);
+            const response = await fetch(url);
+            const text = await response.text();
+            const ipPortRegex = /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{1,5}\b/g;
+            const matches = text.match(ipPortRegex);
+            if (matches && matches.length > 0) {
+                matches.forEach(p => allProxies.add(p));
+                console.log(`✅ ${matches.length} proxies desta fonte.`);
+            } else {
+                console.log(`⚠️ Nenhum proxy válido encontrado nesta fonte.`);
+            }
+        } catch (error) {
+            console.warn(`⚠️ Erro ao buscar de ${url}: ${error.message}`);
+        }
+    }
+    const result = Array.from(allProxies).map(p => `http://${p}`);
+    console.log(`✅ Total único: ${result.length} proxies HTTP prontos para uso.`);
+    return result;
 }
 
 // 2. Validação rápida
-async function proxyEstaVivo(proxyUrl, testUrl = SITE_URL, timeout = 10000) {
+async function proxyEstaVivo(proxyUrl, testUrl = SITE_URL, timeout = 3000) {
     try {
         const agent = new HttpsProxyAgent(proxyUrl);
         await axios.get(testUrl, {
@@ -42,34 +67,36 @@ async function proxyEstaVivo(proxyUrl, testUrl = SITE_URL, timeout = 10000) {
         });
         return true;
     } catch (error) {
-        console.warn('Erro na validação Axios:', error.message);
         return false;
     }
 }
 
 // 3. Função Principal
 async function executarSequenciaGetflix() {
-    const proxyList = await fetchProxies();
+    let proxyList = [];
+    if (workingProxies.length > 0) {
+        console.log(`♻️ Tentando ${workingProxies.length} proxies salvos...`);
+        proxyList = [...workingProxies];
+    }
+    
+    const freshProxies = await fetchProxies();
+    freshProxies.forEach(p => { if (!proxyList.includes(p)) proxyList.push(p); });
+
+    if (proxyList.length === 0) {
+        console.error('Nenhum proxy disponível. Abortando.');
+        return;
+    }
+
     const maxRetries = 10; 
     
     for (let i = 0; i < maxRetries; i++) {
-        const proxyUrlFull = proxyList[0]; 
+        const proxy = proxyList[Math.floor(Math.random() * proxyList.length)];
+        console.log(`\n[${new Date().toLocaleTimeString()}] Tentativa ${i + 1}: Validando proxy ${proxy}...`);
         
-        // URL apenas com host e porta (para o Chrome/Puppeteer)
-        const proxyUrlChrome = `http://${PROXY_HOST}:${PROXY_PORT}`;
-        
-        // Credenciais exatas, sem sufixos
-        const authCredentials = {
-            username: PROXY_USER,
-            password: PROXY_PASS
-        };
-        
-        console.log(`\n[${new Date().toLocaleTimeString()}] Tentativa ${i + 1}: Validando proxy residencial...`);
-        
-        const vivo = await proxyEstaVivo(proxyUrlFull);
+        const vivo = await proxyEstaVivo(proxy);
         if (!vivo) {
-            console.log(`⏳ Proxy demorou a conectar. Tentando novamente...`);
-            await randomDelay(2, 4);
+            console.log(`⏳ Proxy morto/lento. Pulando...`);
+            workingProxies = workingProxies.filter(p => p !== proxy);
             continue;
         }
 
@@ -82,15 +109,11 @@ async function executarSequenciaGetflix() {
             browser = await puppeteer.launch({
                 headless: 'new',
                 executablePath: '/usr/bin/google-chrome-stable',
-                args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', `--proxy-server=${proxyUrlChrome}`]
+                args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', `--proxy-server=${proxy}`]
             });
 
             page = await browser.newPage();
-            
-            // FAZ A AUTENTICAÇÃO DO PROXY DENTRO DO NAVEGADOR
-            await page.authenticate(authCredentials);
-            
-            page.setDefaultTimeout(60000); 
+            page.setDefaultTimeout(60000); // 60s de tolerância
             
             await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
             await page.setViewport({ width: 1366, height: 768 });
@@ -119,6 +142,11 @@ async function executarSequenciaGetflix() {
             console.log('Acessando o GETFLIX...');
             await page.goto(SITE_URL, { waitUntil: 'domcontentloaded' });
             await page.waitForSelector('#main-content .mc');
+            
+            if (!workingProxies.includes(proxy)) {
+                workingProxies.push(proxy);
+                if (workingProxies.length > 20) workingProxies.shift();
+            }
 
             // FUNÇÕES AUXILIARES BLINDADAS
             const pegarCentroDoSeletor = async (seletor) => {
@@ -183,10 +211,10 @@ async function executarSequenciaGetflix() {
             await page.evaluate(() => window.scrollBy(0, 600));
             await randomDelay(1000, 3000);
 
-            // BLOCO 2: BANNERS 
+            // BLOCO 2: BANNERS
             try {
-                if (Math.random() < 0.6) {
-                    const bannerCoords = await pegarCentroDeVarios('.ad-native');
+                if (Math.random() < 0.4) {
+                    const bannerCoords = await pegarCentroDeVarios('.ad-mobile, .ad-native');
                     if (bannerCoords.length > 0) {
                         const target = bannerCoords[Math.floor(Math.random() * bannerCoords.length)];
                         const currentUrl = page.url();
@@ -200,23 +228,23 @@ async function executarSequenciaGetflix() {
                 }
             } catch (e) { console.warn('Erro no banner:', e.message); }
 
-            // BLOCO 3: FILME 
+            // BLOCO 3: FILME
             try {
                 const filmeCoords = await pegarCentroDeVarios('#main-content .mc');
                 if (filmeCoords.length > 0) {
                     const target = filmeCoords[Math.floor(Math.random() * filmeCoords.length)];
                     await clicarNasCoordenadas(target);
-                    await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 60000 });
+                    await page.waitForNavigation({ waitUntil: 'domcontentloaded' });
                 }
             } catch (e) { console.warn('Erro ao clicar no filme:', e.message); }
 
-            // BLOCO 4: PLAYER 
+            // BLOCO 4: PLAYER
             try {
-                await page.waitForSelector('#mainPlayer', { timeout: 60000 });
+                await page.waitForSelector('#mainPlayer');
                 await randomDelay(2000, 4000);
                 
-                if (Math.random() < 0.5) {
-                    const playerBanners = await pegarCentroDeVarios('.ad-sidebar, .ad-native');
+                if (Math.random() < 0.3) {
+                    const playerBanners = await pegarCentroDeVarios('.ad-mobile, .ad-sidebar');
                     if (playerBanners.length > 0) {
                         const target = playerBanners[Math.floor(Math.random() * playerBanners.length)];
                         await clicarNasCoordenadas(target);
@@ -246,6 +274,7 @@ async function executarSequenciaGetflix() {
             
         } catch (error) {
             console.warn(`⚠️ Erro fatal ou timeout estourado: ${error.message}`);
+            workingProxies = workingProxies.filter(p => p !== proxy);
         } finally {
             try { if (page) await page.close(); } catch (e) {}
             try { if (browser) await browser.close(); } catch (e) {}
@@ -254,7 +283,7 @@ async function executarSequenciaGetflix() {
     console.log('Ciclo do bot finalizado.');
 }
 
-// --- NOVA LÓGICA DE LOOP (Sem limite rígido, mas com pausa humana) ---
+// --- LÓGICA DE LOOP (Sem limite rígido, com pausa humana) ---
 async function processQueue() {
     if (isProcessing) return;
     isProcessing = true;
@@ -274,6 +303,7 @@ app.get('/health', (req, res) => {
     res.json({
         status: 'online',
         uptime_seconds: Math.round(process.uptime()),
+        working_proxies_count: workingProxies.length,
         is_processing: isProcessing
     });
 });
