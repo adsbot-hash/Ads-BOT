@@ -14,11 +14,15 @@ app.use(express.json());
 const SITE_URL = 'https://getflix-phi.vercel.app/';
 
 const PROXY_API_URLS = [
-    'https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt',
-    'https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-http.txt',
-    'https://www.proxy-list.download/api/v1/get?type=http',
-    'https://raw.githubusercontent.com/sunny9577/proxy-scraper/master/generated/http_proxies.txt',
-    'https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt'
+    // FONTES ANTIGAS COMENTADAS PARA TESTAR APENAS O PROXMINT
+    // 'https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt',
+    // 'https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-http.txt',
+    // 'https://www.proxy-list.download/api/v1/get?type=http',
+    // 'https://raw.githubusercontent.com/sunny9577/proxy-scraper/master/generated/http_proxies.txt',
+    // 'https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt',
+    
+    // NOVA FONTE: Proxmint (HTTP e formato TXT para IPs mais rápidos)
+    'https://proxmint.com/api/free-proxies?protocol=http&format=txt&pageSize=200'
 ];
 
 const randomDelay = (min, max) => new Promise(r => setTimeout(r, Math.floor(Math.random() * (max - min + 1) + min)));
@@ -28,7 +32,7 @@ let lastExecutions = [];
 const MAX_CALLS_PER_30S = 2;
 let workingProxies = [];
 
-// 1. Buscar Proxies
+// 1. Buscar Proxies (Leitor Inteligente: JSON ou Texto)
 async function fetchProxies() {
     const allProxies = new Set();
     for (const url of PROXY_API_URLS) {
@@ -37,14 +41,41 @@ async function fetchProxies() {
             console.log(`Buscando de: ${shortName}...`);
             const response = await fetch(url);
             const text = await response.text();
-            const ipPortRegex = /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{1,5}\b/g;
-            const matches = text.match(ipPortRegex);
-            if (matches && matches.length > 0) {
-                matches.forEach(p => allProxies.add(p));
-                console.log(`✅ ${matches.length} proxies desta fonte.`);
-            } else {
-                console.log(`⚠️ Nenhum proxy válido encontrado nesta fonte.`);
+            
+            let proxiesEncontrados = [];
+
+            // TENTATIVA 1: É um JSON?
+            try {
+                const data = JSON.parse(text);
+                if (Array.isArray(data) && data.rows) {
+                    data.rows.forEach(item => {
+                        if (item.ip && item.port) {
+                            proxiesEncontrados.push(`${item.ip}:${item.port}`);
+                        }
+                    });
+                } else if (Array.isArray(data)) {
+                     data.forEach(item => {
+                        if (item.ip && item.port) {
+                            proxiesEncontrados.push(`${item.ip}:${item.port}`);
+                        }
+                    });
+                }
+            } catch (e) {
+                // Se der erro, não é JSON. Vai para a Tentativa 2.
             }
+
+            // TENTATIVA 2: É Texto Puro? (Regex)
+            if (proxiesEncontrados.length === 0) {
+                const ipPortRegex = /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{1,5}\b/g;
+                const matches = text.match(ipPortRegex);
+                if (matches) {
+                    proxiesEncontrados = matches;
+                }
+            }
+
+            proxiesEncontrados.forEach(p => allProxies.add(p));
+            console.log(`✅ ${proxiesEncontrados.length} proxies desta fonte.`);
+            
         } catch (error) {
             console.warn(`⚠️ Erro ao buscar de ${url}: ${error.message}`);
         }
