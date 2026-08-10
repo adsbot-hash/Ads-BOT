@@ -21,8 +21,10 @@ const PROXY_API_URLS = [
     // 'https://raw.githubusercontent.com/sunny9577/proxy-scraper/master/generated/http_proxies.txt',
     // 'https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt',
     
-    // NOVA FONTE: Proxmint (HTTP e formato TXT para IPs mais rápidos)
-    'https://proxmint.com/api/free-proxies?protocol=http&format=txt&pageSize=200'
+    // NOVA FONTE 1: Geonode (JSON)
+    'https://proxylist.geonode.com/api/proxy-list?anonymityLevel=elite&speed=fast&page=1&limit=500&sort_by=responseTime&sort_type=asc',
+    // NOVA FONTE 2: Proxmint (HTTP e formato TXT) -- ADICIONADA A VÍRGULA ACIMA
+    'https://proxmint.com/api/free-proxies?protocol=http&format=txt&pageSize=200'    
 ];
 
 const randomDelay = (min, max) => new Promise(r => setTimeout(r, Math.floor(Math.random() * (max - min + 1) + min)));
@@ -49,6 +51,12 @@ async function fetchProxies() {
                 const data = JSON.parse(text);
                 if (Array.isArray(data) && data.rows) {
                     data.rows.forEach(item => {
+                        if (item.ip && item.port) {
+                            proxiesEncontrados.push(`${item.ip}:${item.port}`);
+                        }
+                    });
+                } else if (Array.isArray(data) && data.data) { // Geonode usa data: [...]
+                    data.data.forEach(item => {
                         if (item.ip && item.port) {
                             proxiesEncontrados.push(`${item.ip}:${item.port}`);
                         }
@@ -144,7 +152,7 @@ async function executarSequenciaGetflix() {
             });
 
             page = await browser.newPage();
-            page.setDefaultTimeout(60000); // 60s de tolerância
+            page.setDefaultTimeout(65000); // 65s de tolerância
             
             await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
             await page.setViewport({ width: 1366, height: 768 });
@@ -230,7 +238,7 @@ async function executarSequenciaGetflix() {
                     const searchBtn = await pegarCentroDoSeletor('#searchToggle');
                     await clicarNasCoordenadas(searchBtn);
                     await randomDelay(500, 1000);
-                    const termos = ['Batman', 'Interestelar', 'Série', 'Anime', 'Terror'];
+                    const termos = ['Batman','Anime', 'Terror'];
                     const termo = termos[Math.floor(Math.random() * termos.length)];
                     await page.type('#searchInput', termo, { delay: 100 });
                     await randomDelay(2000, 4000);
