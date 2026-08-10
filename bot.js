@@ -24,18 +24,15 @@ let isProcessing = false;
 let lastExecutions = [];
 const MAX_CALLS_PER_30S = 2;
 
-// 1. Buscar Proxies (Agora gera o link com o proxy premium)
+// 1. Função para gerar o link do proxy (para o Axios)
 async function fetchProxies() {
-    // Para forçar a troca de IP a cada acesso, adicionamos um ID de sessão aleatório no usuário.
-    // (Se o Proxora não suportar sessões, ele vai ignorar e usar a rotação padrão).
     const sessionId = Math.floor(Math.random() * 1000000);
     const proxyUrl = `http://${PROXY_USER}_session-${sessionId}:${PROXY_PASS}@${PROXY_HOST}:${PROXY_PORT}`;
-    
     console.log(`✅ Proxy residencial premium configurado!`);
     return [proxyUrl];
 }
 
-// 2. Validação rápida (Aumentada para 10s pois residenciais podem demorar um pouco a conectar)
+// 2. Validação rápida
 async function proxyEstaVivo(proxyUrl, testUrl = SITE_URL, timeout = 10000) {
     try {
         const agent = new HttpsProxyAgent(proxyUrl);
@@ -55,18 +52,28 @@ async function proxyEstaVivo(proxyUrl, testUrl = SITE_URL, timeout = 10000) {
 
 // 3. Função Principal
 async function executarSequenciaGetflix() {
-    const proxyList = await fetchProxies(); // Sempre vai ter o proxy premium aqui
-    
+    const proxyList = await fetchProxies();
     const maxRetries = 10; 
     
     for (let i = 0; i < maxRetries; i++) {
-        const proxy = proxyList[0]; // Pega o proxy premium
+        const proxyUrlFull = proxyList[0]; // URL com login e senha (para o Axios)
+        
+        // URL apenas com host e porta (para o Chrome/Puppeteer)
+        const proxyUrlChrome = `http://${PROXY_HOST}:${PROXY_PORT}`;
+        
+        // Gera um novo ID de sessão a cada tentativa para forçar a troca de IP
+        const sessionId = Math.floor(Math.random() * 1000000);
+        const authCredentials = {
+            username: `${PROXY_USER}_session-${sessionId}`,
+            password: PROXY_PASS
+        };
+        
         console.log(`\n[${new Date().toLocaleTimeString()}] Tentativa ${i + 1}: Validando proxy residencial...`);
         
-        const vivo = await proxyEstaVivo(proxy);
+        const vivo = await proxyEstaVivo(proxyUrlFull);
         if (!vivo) {
             console.log(`⏳ Proxy demorou a conectar. Tentando novamente...`);
-            await randomDelay(2, 4); // Espera uns segundinhos antes de tentar de novo
+            await randomDelay(2, 4);
             continue;
         }
 
@@ -79,11 +86,16 @@ async function executarSequenciaGetflix() {
             browser = await puppeteer.launch({
                 headless: 'new',
                 executablePath: '/usr/bin/google-chrome-stable',
-                args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', `--proxy-server=${proxy}`]
+                // Passa apenas o host e a porta para o Chrome
+                args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', `--proxy-server=${proxyUrlChrome}`]
             });
 
             page = await browser.newPage();
-            page.setDefaultTimeout(60000); // 60s de tolerância
+            
+            // FAZ A AUTENTICAÇÃO DO PROXY DENTRO DO NAVEGADOR
+            await page.authenticate(authCredentials);
+            
+            page.setDefaultTimeout(60000); 
             
             await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
             await page.setViewport({ width: 1366, height: 768 });
@@ -193,7 +205,7 @@ async function executarSequenciaGetflix() {
                 }
             } catch (e) { console.warn('Erro no banner:', e.message); }
 
-            // BLOCO 3: FILME (Aciona Smartlink - Timeout reduzido para 25s para não prender o bot)
+            // BLOCO 3: FILME (Aciona Smartlink - Timeout 25s)
             try {
                 const filmeCoords = await pegarCentroDeVarios('#main-content .mc');
                 if (filmeCoords.length > 0) {
@@ -201,9 +213,9 @@ async function executarSequenciaGetflix() {
                     await clicarNasCoordenadas(target);
                     await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 25000 });
                 }
-            } catch (e) { console.warn('Erro ao clicar no filme (proxy muito lento):', e.message); }
+            } catch (e) { console.warn('Erro ao clicar no filme:', e.message); }
 
-            // BLOCO 4: PLAYER (Foco em mais Native Banners na página do filme - 50% chance)
+            // BLOCO 4: PLAYER 
             try {
                 await page.waitForSelector('#mainPlayer', { timeout: 25000 });
                 await randomDelay(2000, 4000);
