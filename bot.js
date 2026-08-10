@@ -21,8 +21,6 @@ const PROXY_PASS = '27ca2a2cebe9_country-us';
 const randomDelay = (min, max) => new Promise(r => setTimeout(r, Math.floor(Math.random() * (max - min + 1) + min)));
 
 let isProcessing = false;
-let lastExecutions = [];
-const MAX_CALLS_PER_30S = 2;
 
 // 1. Função para gerar o link do proxy
 async function fetchProxies() {
@@ -208,13 +206,13 @@ async function executarSequenciaGetflix() {
                 if (filmeCoords.length > 0) {
                     const target = filmeCoords[Math.floor(Math.random() * filmeCoords.length)];
                     await clicarNasCoordenadas(target);
-                    await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 25000 });
+                    await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 60000 });
                 }
             } catch (e) { console.warn('Erro ao clicar no filme:', e.message); }
 
             // BLOCO 4: PLAYER 
             try {
-                await page.waitForSelector('#mainPlayer', { timeout: 25000 });
+                await page.waitForSelector('#mainPlayer', { timeout: 60000 });
                 await randomDelay(2000, 4000);
                 
                 if (Math.random() < 0.5) {
@@ -256,23 +254,18 @@ async function executarSequenciaGetflix() {
     console.log('Ciclo do bot finalizado.');
 }
 
-// --- GESTÃO DA FILA E RATE LIMIT ---
+// --- NOVA LÓGICA DE LOOP (Sem limite rígido, mas com pausa humana) ---
 async function processQueue() {
     if (isProcessing) return;
     isProcessing = true;
 
     while (true) {
-        const now = Date.now();
-        lastExecutions = lastExecutions.filter(time => now - time < 30000);
-
-        if (lastExecutions.length < MAX_CALLS_PER_30S) {
-            lastExecutions.push(now);
-            await executarSequenciaGetflix();
-        } else {
-            const tempoParaEsperar = 30000 - (now - lastExecutions[0]) + 1000;
-            console.log(`⏳ Limite de taxa. Aguardando ${Math.round(tempoParaEsperar/1000)}s...`);
-            await new Promise(r => setTimeout(r, tempoParaEsperar));
-        }
+        await executarSequenciaGetflix();
+        
+        // Pausa humana: Descansa de 2 a 5 minutos (120s a 300s) antes do próximo acesso
+        const tempoDescanso = Math.floor(Math.random() * (300 - 120 + 1) + 120);
+        console.log(`\n😴 Ciclo concluído. Bot vai descansar por ${tempoDescanso} segundos para simular comportamento humano...`);
+        await new Promise(r => setTimeout(r, tempoDescanso * 1000));
     }
 }
 
