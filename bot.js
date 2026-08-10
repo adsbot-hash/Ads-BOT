@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+// Removido: const { createCursor } = require('ghost-cursor');
 const axios = require('axios');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 
@@ -12,20 +13,19 @@ app.use(express.json());
 
 const SITE_URL = 'https://getflix-phi.vercel.app/';
 
-// FONTES DE PROXIES (Adicionada a nova API do Roundproxies)
 const PROXY_API_URLS = [
     'https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt',
     'https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-http.txt',
     'https://www.proxy-list.download/api/v1/get?type=http',
     'https://raw.githubusercontent.com/sunny9577/proxy-scraper/master/generated/http_proxies.txt',
-    'https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt',
-    // NOVA FONTE: Roundproxies (Filtro de proxies mais rápidos)
-    'https://roundproxies.com/api/get-free-proxies?limit=100&page=1&sort_by=lastChecked&sort_type=desc&speed=fast'
+    'https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt'
 ];
 
 const randomDelay = (min, max) => new Promise(r => setTimeout(r, Math.floor(Math.random() * (max - min + 1) + min)));
 
 let isProcessing = false;
+let lastExecutions = [];
+const MAX_CALLS_PER_30S = 2;
 let workingProxies = [];
 
 // 1. Buscar Proxies
@@ -148,7 +148,7 @@ async function executarSequenciaGetflix() {
                 if (workingProxies.length > 20) workingProxies.shift();
             }
 
-            // FUNÇÕES AUXILIARES BLINDADAS
+            // FUNÇÕES AUXILIARES BLINDADAS (Sem ghost-cursor, 100% nativo)
             const pegarCentroDoSeletor = async (seletor) => {
                 return await page.evaluate((sel) => {
                     const el = document.querySelector(sel);
@@ -169,6 +169,7 @@ async function executarSequenciaGetflix() {
             };
 
             const moverMouseRealista = async (x, y) => {
+                // Move o mouse em passos para simular movimento humano (sem bibliotecas)
                 const steps = 10;
                 for (let i = 1; i <= steps; i++) {
                     await page.mouse.move((x / steps) * i + Math.random() * 5, (y / steps) * i + Math.random() * 5);
@@ -283,18 +284,23 @@ async function executarSequenciaGetflix() {
     console.log('Ciclo do bot finalizado.');
 }
 
-// --- LÓGICA DE LOOP (Sem limite rígido, com pausa humana) ---
+// --- GESTÃO DA FILA E RATE LIMIT ---
 async function processQueue() {
     if (isProcessing) return;
     isProcessing = true;
 
     while (true) {
-        await executarSequenciaGetflix();
-        
-        // Pausa humana: Descansa de 2 a 5 minutos (120s a 300s) antes do próximo acesso
-        const tempoDescanso = Math.floor(Math.random() * (300 - 120 + 1) + 120);
-        console.log(`\n😴 Ciclo concluído. Bot vai descansar por ${tempoDescanso} segundos para simular comportamento humano...`);
-        await new Promise(r => setTimeout(r, tempoDescanso * 1000));
+        const now = Date.now();
+        lastExecutions = lastExecutions.filter(time => now - time < 30000);
+
+        if (lastExecutions.length < MAX_CALLS_PER_30S) {
+            lastExecutions.push(now);
+            await executarSequenciaGetflix();
+        } else {
+            const tempoParaEsperar = 30000 - (now - lastExecutions[0]) + 1000;
+            console.log(`⏳ Limite de taxa. Aguardando ${Math.round(tempoParaEsperar/1000)}s...`);
+            await new Promise(r => setTimeout(r, tempoParaEsperar));
+        }
     }
 }
 
