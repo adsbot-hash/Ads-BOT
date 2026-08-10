@@ -22,7 +22,7 @@ const PROXY_API_URLS = [
     // 'https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt',
     
     // NOVA FONTE 1: Geonode (JSON)
-   // 'https://proxylist.geonode.com/api/proxy-list?anonymityLevel=elite&speed=fast&page=1&limit=290&sort_by=responseTime&sort_type=asc',
+    'https://proxylist.geonode.com/api/proxy-list?anonymityLevel=elite&speed=fast&page=1&limit=290&sort_by=responseTime&sort_type=asc',
     // NOVA FONTE 2: Proxmint (HTTP e formato TXT) -- ADICIONADA A VÍRGULA ACIMA
     'https://proxmint.com/api/free-proxies?protocol=http&format=txt&pageSize=200'    
 ];
@@ -41,43 +41,60 @@ async function fetchProxies() {
         try {
             const shortName = url.split('/').slice(-1)[0].substring(0, 25);
             console.log(`Buscando de: ${shortName}...`);
-            const response = await fetch(url);
+            
+            // 🔧 Adiciona User-Agent e Accept
+            const response = await fetch(url, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                    'Accept': 'text/plain, */*',
+                    'Accept-Encoding': 'identity' // Desativa compressão para ver o texto cru
+                }
+            });
+
+            // 📡 LOG DO STATUS E HEADERS
+            console.log(`📡 Status: ${response.status} ${response.statusText}`);
+            console.log(`📡 Content-Type: ${response.headers.get('content-type')}`);
+
+            if (!response.ok) {
+                console.warn(`⚠️ API respondeu com status ${response.status}. Pulando.`);
+                continue;
+            }
+
             const text = await response.text();
             
+            // 📄 LOG DO CONTEÚDO BRUTO (primeiros 300 caracteres)
+            console.log(`📄 Conteúdo bruto (início): ${text.substring(0, 300)}`);
+
             let proxiesEncontrados = [];
 
-            // TENTATIVA 1: É um JSON?
+            // TENTATIVA 1: JSON (caso mude)
             try {
                 const data = JSON.parse(text);
-                if (Array.isArray(data) && data.rows) {
-                    data.rows.forEach(item => {
-                        if (item.ip && item.port) {
-                            proxiesEncontrados.push(`${item.ip}:${item.port}`);
-                        }
-                    });
-                } else if (Array.isArray(data) && data.data) { // Geonode usa data: [...]
+                if (data.data && Array.isArray(data.data)) {
                     data.data.forEach(item => {
                         if (item.ip && item.port) {
                             proxiesEncontrados.push(`${item.ip}:${item.port}`);
                         }
                     });
                 } else if (Array.isArray(data)) {
-                     data.forEach(item => {
+                    data.forEach(item => {
                         if (item.ip && item.port) {
                             proxiesEncontrados.push(`${item.ip}:${item.port}`);
                         }
                     });
                 }
             } catch (e) {
-                // Se der erro, não é JSON. Vai para a Tentativa 2.
+                // Não é JSON
             }
 
-            // TENTATIVA 2: É Texto Puro? (Regex)
+            // TENTATIVA 2: Texto puro (regex)
             if (proxiesEncontrados.length === 0) {
                 const ipPortRegex = /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{1,5}\b/g;
                 const matches = text.match(ipPortRegex);
                 if (matches) {
                     proxiesEncontrados = matches;
+                } else {
+                    console.log(`⚠️ Nenhum proxy encontrado para ${shortName}. Texto completo (até 500 chars):`, text.substring(0, 500));
                 }
             }
 
