@@ -13,8 +13,8 @@ app.use(express.json());
 const SITE_URL = 'https://getflix-phi.vercel.app/';
 
 const PROXY_API_URLS = [
-    // NOVA FONTE 1: Geonode (JSON)
-    'https://proxylist.geonode.com/api/proxy-list?anonymityLevel=elite&speed=fast&page=1&limit=290&sort_by=responseTime&sort_type=asc',
+    // NOVA FONTE 1: Geonode (JSON) - Limite alterado para 500
+    'https://proxylist.geonode.com/api/proxy-list?anonymityLevel=elite&speed=fast&page=1&limit=500&sort_by=responseTime&sort_type=asc',
     // NOVA FONTE 2: Proxmint (HTTP e formato TXT)
     'https://proxmint.com/api/free-proxies?protocol=http&format=txt&pageSize=500'    
 ];
@@ -169,14 +169,14 @@ async function executarSequenciaGetflix() {
                 Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
             });
 
-            // MONITOR DE MONETIZAÇÃO
+            // MONITOR DE MONETIZAÇÃO (Tempo aumentado para 10 a 15 segundos)
             browser.on('targetcreated', async (target) => {
                 if (target.type() === 'page') {
                     const adPage = await target.page();
                     if (adPage) {
                         try {
                             console.log('💰 [Monetização] Smartlink/Anúncio abriu! Contando impressão...');
-                            await randomDelay(2000, 4000);
+                            await randomDelay(10000, 15000); // Deixa o anúncio aberto por 10 a 15 segundos
                             await adPage.close();
                             await page.bringToFront();
                             console.log('🔒 Anúncio fechado. Voltando ao GETFLIX.');
