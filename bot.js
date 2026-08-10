@@ -22,7 +22,7 @@ const PROXY_API_URLS = [
     // 'https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt',
     
     // NOVA FONTE 1: Geonode (JSON)
-    'https://proxylist.geonode.com/api/proxy-list?anonymityLevel=elite&speed=fast&page=1&limit=290&sort_by=responseTime&sort_type=asc',
+   // 'https://proxylist.geonode.com/api/proxy-list?anonymityLevel=elite&speed=fast&page=1&limit=290&sort_by=responseTime&sort_type=asc',
     // NOVA FONTE 2: Proxmint (HTTP e formato TXT) -- ADICIONADA A VÍRGULA ACIMA
     'https://proxmint.com/api/free-proxies?protocol=http&format=txt&pageSize=200'    
 ];
@@ -41,23 +41,7 @@ async function fetchProxies() {
         try {
             const shortName = url.split('/').slice(-1)[0].substring(0, 25);
             console.log(`Buscando de: ${shortName}...`);
-            
-            // 🔧 CABEÇALHOS IGUAIS AO DO CURL PARA EVITAR BLOQUEIOS
-            const response = await fetch(url, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                    'Accept': 'application/json, text/plain, */*',
-                    'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-                    'Accept-Encoding': 'gzip, deflate, br'
-                }
-            });
-
-            // ⚠️ VERIFICA SE A REQUISIÇÃO FOI BEM SUCEDIDA
-            if (!response.ok) {
-                console.warn(`⚠️ API respondeu com status ${response.status} para ${shortName}. Pulando.`);
-                continue;
-            }
-
+            const response = await fetch(url);
             const text = await response.text();
             
             let proxiesEncontrados = [];
@@ -94,9 +78,6 @@ async function fetchProxies() {
                 const matches = text.match(ipPortRegex);
                 if (matches) {
                     proxiesEncontrados = matches;
-                } else {
-                    // Log de depuração: mostra o início da resposta para diagnosticar
-                    console.log(`⚠️ Nenhum proxy encontrado para ${shortName}. Início da resposta:`, text.substring(0, 150));
                 }
             }
 
