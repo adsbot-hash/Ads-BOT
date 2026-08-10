@@ -5,6 +5,11 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const axios = require('axios');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 
+// 🛡️ BLINDAGEM GLOBAL: Impede que erros do plugin Stealth derrubem o servidor
+process.on('unhandledRejection', (reason, promise) => {
+    console.warn('⚠️ Erro interno ignorado (Stealth plugin/aba fechada):', reason.message || reason);
+});
+
 puppeteer.use(StealthPlugin());
 const app = express();
 app.use(cors());
@@ -145,7 +150,13 @@ async function executarSequenciaGetflix() {
             browser = await puppeteer.launch({
                 headless: 'new',
                 executablePath: '/usr/bin/google-chrome-stable',
-                args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', `--proxy-server=${proxy}`]
+                args: [
+                    '--no-sandbox', 
+                    '--disable-setuid-sandbox', 
+                    '--disable-dev-shm-usage',
+                    '--ignore-certificate-errors', // ADICIONADO: Ignora erro de certificado do proxy
+                    `--proxy-server=${proxy}`
+                ]
             });
 
             page = await browser.newPage();
