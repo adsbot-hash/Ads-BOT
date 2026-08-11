@@ -17,83 +17,28 @@ app.use(express.json());
 
 const SITE_URL = 'https://getflix-phi.vercel.app/';
 
-const PROXY_API_URLS = [
-    'https://proxylist.geonode.com/api/proxy-list?anonymityLevel=elite&speed=fast&page=1&limit=500&sort_by=responseTime&sort_type=asc',
-    'https://proxmint.com/api/free-proxies?protocol=http&format=txt&pageSize=500'    
+// ✅ CONFIGURAÇÃO DOS 10 IPs PREMIUM DO DECODO (EUA)
+const PROXY_USER = 'sptaffskwx';
+const PROXY_PASS = '4jvbUhClYsP0m_4bv1';
+const DECODO_PROXIES = [
+    { host: 'dc.decodo.com', port: 10001 },
+    { host: 'dc.decodo.com', port: 10002 },
+    { host: 'dc.decodo.com', port: 10003 },
+    { host: 'dc.decodo.com', port: 10004 },
+    { host: 'dc.decodo.com', port: 10005 },
+    { host: 'dc.decodo.com', port: 10006 },
+    { host: 'dc.decodo.com', port: 10007 },
+    { host: 'dc.decodo.com', port: 10008 },
+    { host: 'dc.decodo.com', port: 10009 },
+    { host: 'dc.decodo.com', port: 10010 }
 ];
 
 const randomDelay = (min, max) => new Promise(r => setTimeout(r, Math.floor(Math.random() * (max - min + 1) + min)));
 
 let isProcessing = false;
-let lastExecutions = [];
-const MAX_CALLS_PER_30S = 2;
-let workingProxies = [];
 
-// 1. Buscar Proxies
-async function fetchProxies() {
-    const allProxies = new Set();
-    for (const url of PROXY_API_URLS) {
-        try {
-            const shortName = url.split('/').slice(-1)[0].substring(0, 25);
-            console.log(`Buscando de: ${shortName}...`);
-            
-            const response = await fetch(url, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                    'Accept': 'text/plain, */*'
-                }
-            });
-
-            if (!response.ok) {
-                console.warn(`⚠️ API respondeu com status ${response.status}. Pulando.`);
-                continue;
-            }
-
-            const text = await response.text();
-            
-            let proxiesEncontrados = [];
-
-            try {
-                const data = JSON.parse(text);
-                if (data.data && Array.isArray(data.data)) {
-                    data.data.forEach(item => {
-                        if (item.ip && item.port) {
-                            proxiesEncontrados.push(`${item.ip}:${item.port}`);
-                        }
-                    });
-                } else if (Array.isArray(data)) {
-                    data.forEach(item => {
-                        if (item.ip && item.port) {
-                            proxiesEncontrados.push(`${item.ip}:${item.port}`);
-                        }
-                    });
-                }
-            } catch (e) {
-                // Não é JSON
-            }
-
-            if (proxiesEncontrados.length === 0) {
-                const ipPortRegex = /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{1,5}\b/g;
-                const matches = text.match(ipPortRegex);
-                if (matches) {
-                    proxiesEncontrados = matches;
-                }
-            }
-
-            proxiesEncontrados.forEach(p => allProxies.add(p));
-            console.log(`✅ ${proxiesEncontrados.length} proxies desta fonte.`);
-            
-        } catch (error) {
-            console.warn(`⚠️ Erro ao buscar de ${url}: ${error.message}`);
-        }
-    }
-    const result = Array.from(allProxies).map(p => `http://${p}`);
-    console.log(`✅ Total único: ${result.length} proxies HTTP prontos para uso.`);
-    return result;
-}
-
-// 2. Validação com httpbin.org (Reduzido para 5s)
-async function proxyEstaVivo(proxyUrl, timeout = 5000) {
+// 1. Validação com httpbin.org
+async function proxyEstaVivo(proxyUrl, timeout = 10000) {
     try {
         const agent = new HttpsProxyAgent(proxyUrl);
         await axios.get('http://httpbin.org/ip', {
@@ -108,32 +53,32 @@ async function proxyEstaVivo(proxyUrl, timeout = 5000) {
     }
 }
 
-// 3. Função Principal
+// 2. Função Principal
 async function executarSequenciaGetflix() {
-    let proxyList = [];
-    if (workingProxies.length > 0) {
-        console.log(`♻️ Tentando ${workingProxies.length} proxies salvos...`);
-        proxyList = [...workingProxies];
-    }
-    
-    const freshProxies = await fetchProxies();
-    freshProxies.forEach(p => { if (!proxyList.includes(p)) proxyList.push(p); });
-
-    if (proxyList.length === 0) {
-        console.error('Nenhum proxy disponível. Abortando.');
-        return;
-    }
-
     const maxRetries = 10; 
     
     for (let i = 0; i < maxRetries; i++) {
-        const proxy = proxyList[Math.floor(Math.random() * proxyList.length)];
-        console.log(`\n[${new Date().toLocaleTimeString()}] Tentativa ${i + 1}: Validando proxy ${proxy}...`);
+        // Sorteia um dos 10 IPs do Decodo
+        const selectedProxy = DECODO_PROXIES[Math.floor(Math.random() * DECODO_PROXIES.length)];
         
-        const vivo = await proxyEstaVivo(proxy);
+        // URL para o Axios testar
+        const proxyUrlFull = `http://${PROXY_USER}:${PROXY_PASS}@${selectedProxy.host}:${selectedProxy.port}`;
+        
+        // URL para o Chrome (sem usuário e senha)
+        const proxyUrlChrome = `http://${selectedProxy.host}:${selectedProxy.port}`;
+        
+        // Credenciais separadas para o Puppeteer
+        const authCredentials = {
+            username: PROXY_USER,
+            password: PROXY_PASS
+        };
+
+        console.log(`\n[${new Date().toLocaleTimeString()}] Tentativa ${i + 1}: Validando Decodo IP (${selectedProxy.host}:${selectedProxy.port})...`);
+        
+        const vivo = await proxyEstaVivo(proxyUrlFull);
         if (!vivo) {
-            console.log(`⏳ Proxy morto/lento. Pulando...`);
-            workingProxies = workingProxies.filter(p => p !== proxy);
+            console.log(`⏳ Proxy demorou a conectar. Tentando outro...`);
+            await randomDelay(2, 4);
             continue;
         }
 
@@ -151,12 +96,15 @@ async function executarSequenciaGetflix() {
                     '--disable-setuid-sandbox', 
                     '--disable-dev-shm-usage',
                     '--ignore-certificate-errors',
-                    `--proxy-server=${proxy}`
+                    `--proxy-server=${proxyUrlChrome}`
                 ]
             });
 
             page = await browser.newPage();
-            // ⏱️ REDUZIDO PARA 45s: Se não carregar em 45s, o bot pula para o próximo
+            
+            // FAZ A AUTENTICAÇÃO DO PROXY DENTRO DO NAVEGADOR
+            await page.authenticate(authCredentials);
+            
             page.setDefaultTimeout(45000); 
             
             await page.setRequestInterception(true);
@@ -191,7 +139,7 @@ async function executarSequenciaGetflix() {
                     if (adPage) {
                         try {
                             console.log('💰 [Monetização] Anúncio abriu! Contando impressão...');
-                            await randomDelay(5000, 8000); 
+                            await randomDelay(10000, 15000); // Deixa aberto para contar
                             await adPage.close();
                             await page.bringToFront();
                             console.log('🔒 Anúncio fechado.');
@@ -203,12 +151,8 @@ async function executarSequenciaGetflix() {
             console.log('Acessando o GETFLIX...');
             await page.goto(SITE_URL, { waitUntil: 'domcontentloaded' });
             await page.waitForSelector('#main-content .mc');
-            
-            if (!workingProxies.includes(proxy)) {
-                workingProxies.push(proxy);
-                if (workingProxies.length > 20) workingProxies.shift();
-            }
 
+            // FUNÇÕES AUXILIARES
             const pegarCentroDoSeletor = async (seletor) => {
                 return await page.evaluate((sel) => {
                     const el = document.querySelector(sel);
@@ -294,13 +238,13 @@ async function executarSequenciaGetflix() {
                 if (filmeCoords.length > 0) {
                     const target = filmeCoords[Math.floor(Math.random() * filmeCoords.length)];
                     await clicarNasCoordenadas(target);
-                    await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 20000 }); // Reduzido para 20s
+                    await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 });
                 }
             } catch (e) { console.warn('Erro ao clicar no filme:', e.message); }
 
             // BLOCO 4: PLAYER
             try {
-                await page.waitForSelector('#mainPlayer', { timeout: 20000 }); // Reduzido para 20s
+                await page.waitForSelector('#mainPlayer', { timeout: 30000 });
                 await randomDelay(2000, 4000);
                 
                 if (Math.random() < 0.3) {
@@ -334,7 +278,6 @@ async function executarSequenciaGetflix() {
             
         } catch (error) {
             console.warn(`⚠️ Erro fatal ou timeout estourado: ${error.message}`);
-            workingProxies = workingProxies.filter(p => p !== proxy);
         } finally {
             try { if (page) await page.close(); } catch (e) {}
             try { if (browser) await browser.close(); } catch (e) {}
@@ -343,23 +286,18 @@ async function executarSequenciaGetflix() {
     console.log('Ciclo do bot finalizado.');
 }
 
-// --- GESTÃO DA FILA E RATE LIMIT ---
+// --- LÓGICA DE LOOP (Pausa humana longa para proteger os 10 IPs) ---
 async function processQueue() {
     if (isProcessing) return;
     isProcessing = true;
 
     while (true) {
-        const now = Date.now();
-        lastExecutions = lastExecutions.filter(time => now - time < 30000);
-
-        if (lastExecutions.length < MAX_CALLS_PER_30S) {
-            lastExecutions.push(now);
-            await executarSequenciaGetflix();
-        } else {
-            const tempoParaEsperar = 30000 - (now - lastExecutions[0]) + 1000;
-            console.log(`⏳ Limite de taxa. Aguardando ${Math.round(tempoParaEsperar/1000)}s...`);
-            await new Promise(r => setTimeout(r, tempoParaEsperar));
-        }
+        await executarSequenciaGetflix();
+        
+        // Pausa humana: Descansa de 3 a 6 minutos (180s a 360s) para proteger os 10 IPs
+        const tempoDescanso = Math.floor(Math.random() * (360 - 180 + 1) + 180);
+        console.log(`\n😴 Ciclo concluído. Bot vai descansar por ${tempoDescanso} segundos para proteger os IPs...`);
+        await new Promise(r => setTimeout(r, tempoDescanso * 1000));
     }
 }
 
@@ -368,7 +306,6 @@ app.get('/health', (req, res) => {
     res.json({
         status: 'online',
         uptime_seconds: Math.round(process.uptime()),
-        working_proxies_count: workingProxies.length,
         is_processing: isProcessing
     });
 });
