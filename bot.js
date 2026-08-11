@@ -18,9 +18,7 @@ app.use(express.json());
 const SITE_URL = 'https://getflix-phi.vercel.app/';
 
 const PROXY_API_URLS = [
-    // NOVA FONTE 1: Geonode (JSON) - Limite alterado para 500
     'https://proxylist.geonode.com/api/proxy-list?anonymityLevel=elite&speed=fast&page=1&limit=500&sort_by=responseTime&sort_type=asc',
-    // NOVA FONTE 2: Proxmint (HTTP e formato TXT)
     'https://proxmint.com/api/free-proxies?protocol=http&format=txt&pageSize=500'    
 ];
 
@@ -55,7 +53,6 @@ async function fetchProxies() {
             
             let proxiesEncontrados = [];
 
-            // TENTATIVA 1: JSON
             try {
                 const data = JSON.parse(text);
                 if (data.data && Array.isArray(data.data)) {
@@ -75,7 +72,6 @@ async function fetchProxies() {
                 // Não é JSON
             }
 
-            // TENTATIVA 2: Texto puro (regex)
             if (proxiesEncontrados.length === 0) {
                 const ipPortRegex = /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{1,5}\b/g;
                 const matches = text.match(ipPortRegex);
@@ -96,8 +92,8 @@ async function fetchProxies() {
     return result;
 }
 
-// 2. Validação com httpbin.org
-async function proxyEstaVivo(proxyUrl, timeout = 10000) {
+// 2. Validação com httpbin.org (Reduzido para 5s)
+async function proxyEstaVivo(proxyUrl, timeout = 5000) {
     try {
         const agent = new HttpsProxyAgent(proxyUrl);
         await axios.get('http://httpbin.org/ip', {
@@ -154,15 +150,15 @@ async function executarSequenciaGetflix() {
                     '--no-sandbox', 
                     '--disable-setuid-sandbox', 
                     '--disable-dev-shm-usage',
-                    '--ignore-certificate-errors', // ADICIONADO: Ignora erro de certificado do proxy
+                    '--ignore-certificate-errors',
                     `--proxy-server=${proxy}`
                 ]
             });
 
             page = await browser.newPage();
-            page.setDefaultTimeout(65000);
+            // ⏱️ REDUZIDO PARA 20s: Se não carregar em 20s, o bot pula para o próximo
+            page.setDefaultTimeout(20000); 
             
-            // BLOQUEAR IMAGENS E FONTES PARA CARREGAR MAIS RÁPIDO
             await page.setRequestInterception(true);
             page.on('request', (req) => {
                 if (['image', 'font', 'media'].includes(req.resourceType())) {
@@ -175,7 +171,6 @@ async function executarSequenciaGetflix() {
             await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
             await page.setViewport({ width: 1366, height: 768 });
 
-            // NOVIDADE: Cabeçalhos HTTP para enganar o Cloudflare (Dica aplicada)
             await page.setExtraHTTPHeaders({
                 'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
                 'Accept-Encoding': 'gzip, deflate, br',
@@ -189,17 +184,17 @@ async function executarSequenciaGetflix() {
                 Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
             });
 
-            // MONITOR DE MONETIZAÇÃO (Tempo aumentado para 10 a 15 segundos)
+            // MONITOR DE MONETIZAÇÃO
             browser.on('targetcreated', async (target) => {
                 if (target.type() === 'page') {
                     const adPage = await target.page();
                     if (adPage) {
                         try {
-                            console.log('💰 [Monetização] Smartlink/Anúncio abriu! Contando impressão...');
-                            await randomDelay(10000, 15000); // Deixa o anúncio aberto por 10 a 15 segundos
+                            console.log('💰 [Monetização] Anúncio abriu! Contando impressão...');
+                            await randomDelay(5000, 8000); 
                             await adPage.close();
                             await page.bringToFront();
-                            console.log('🔒 Anúncio fechado. Voltando ao GETFLIX.');
+                            console.log('🔒 Anúncio fechado.');
                         } catch (e) {}
                     }
                 }
@@ -214,7 +209,6 @@ async function executarSequenciaGetflix() {
                 if (workingProxies.length > 20) workingProxies.shift();
             }
 
-            // FUNÇÕES AUXILIARES
             const pegarCentroDoSeletor = async (seletor) => {
                 return await page.evaluate((sel) => {
                     const el = document.querySelector(sel);
@@ -300,13 +294,13 @@ async function executarSequenciaGetflix() {
                 if (filmeCoords.length > 0) {
                     const target = filmeCoords[Math.floor(Math.random() * filmeCoords.length)];
                     await clicarNasCoordenadas(target);
-                    await page.waitForNavigation({ waitUntil: 'domcontentloaded' });
+                    await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 20000 }); // Reduzido para 20s
                 }
             } catch (e) { console.warn('Erro ao clicar no filme:', e.message); }
 
             // BLOCO 4: PLAYER
             try {
-                await page.waitForSelector('#mainPlayer');
+                await page.waitForSelector('#mainPlayer', { timeout: 20000 }); // Reduzido para 20s
                 await randomDelay(2000, 4000);
                 
                 if (Math.random() < 0.3) {
