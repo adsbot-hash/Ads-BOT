@@ -156,8 +156,8 @@ async function executarSequenciaGetflix() {
             });
 
             page = await browser.newPage();
-            // ⏱️ REDUZIDO PARA 20s: Se não carregar em 20s, o bot pula para o próximo
-            page.setDefaultTimeout(20000); 
+            // ⏱️ REDUZIDO PARA 45s: Se não carregar em 45s, o bot pula para o próximo
+            page.setDefaultTimeout(45000); 
             
             await page.setRequestInterception(true);
             page.on('request', (req) => {
